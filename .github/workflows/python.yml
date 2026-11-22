@@ -54,6 +54,7 @@ jobs:
           python3 -I tools/checks/check-refs.py docs/ns3-bugs.md docs/ns3-rcapa/
       - name: Install the package; console scripts run
         if: steps.changes.outputs.docs-only != 'true'
+        timeout-minutes: 5  # an install, as the PyYAML step (seconds in a green run)
         run: |
           # the build backend from its hash-pinned lock, then the package with no
           # index fetch: no dependencies, no isolated build (swarm-routing/.github#716)
