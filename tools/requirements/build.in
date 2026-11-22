@@ -1,0 +1,9 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+#
+# The build backend python.yml installs ./python with (python/pyproject.toml
+# [build-system]), so the install builds without fetching an unpinned one.
+# build.txt is the lock CI installs with --require-hashes (OpenSSF Scorecard
+# Pinned-Dependencies, swarm-routing/.github#716); regenerate it after a change:
+#   uv pip compile --universal --python-version 3.11 --generate-hashes --no-header tools/requirements/build.in -o tools/requirements/build.txt
+setuptools>=77

@@ -82,8 +82,10 @@ jobs:
           # predate that label.
           ver=$(envvar NS3_VERSION)
           reg=https://ghcr.io/v2/swarm-routing/ns3-dev
-          token=$(curl -fsS "https://ghcr.io/token?scope=repository:swarm-routing/ns3-dev:pull" \
-            | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          # the anonymous pull token: the JSON is read as data, never piped into
+          # an interpreter (OpenSSF Scorecard downloadThenRun, swarm-routing/.github#716)
+          resp=$(curl -fsS "https://ghcr.io/token?scope=repository:swarm-routing/ns3-dev:pull")
+          token=$(RESP="$resp" python3 -c 'import json,os; print(json.loads(os.environ["RESP"])["token"])')
           accept="application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json"
           accept+=",application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json"
           twin=""
