@@ -1,0 +1,20 @@
+--- a/src/dsdv/model/dsdv-routing-protocol.cc
++++ b/src/dsdv/model/dsdv-routing-protocol.cc
+@@ -889,6 +889,17 @@
+ void
+ RoutingProtocol::SendPeriodicUpdate()
+ {
++    {
++        static std::set<uint32_t> shown;
++        const uint32_t id = m_ipv4->GetObject<Node>()->GetId();
++        if (shown.insert(id).second)
++        {
++            std::cerr << "ORDER node " << id << ":";
++            for (const auto& [s, a] : m_socketAddresses)
++                std::cerr << " " << m_ipv4->GetInterfaceForAddress(a.GetLocal());
++            std::cerr << std::endl;
++        }
++    }
+     std::map<Ipv4Address, RoutingTableEntry> removedAddresses;
+     std::map<Ipv4Address, RoutingTableEntry> allRoutes;
+     m_routingTable.Purge(removedAddresses);

@@ -1,0 +1,35 @@
+# Copyright (c) 2026 Daniel Joppi (https://github.com/swarm-routing)
+# SPDX-License-Identifier: MIT OR GPL-2.0-only
+# Scratch probe for #301, on a validation branch only (no PR, never main).
+name: probe-301
+
+on:
+  push:
+    branches: [claude/dsdv-301-probe]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  probe:
+    name: dsdv-ring on ${{ matrix.tree }}, ${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    container:
+      image: ghcr.io/swarm-routing/ns3-dev:latest-debug
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        tree: [release, master]
+        variant: [stock, order]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Probe
+        timeout-minutes: 140
+        run: bash probe/run.sh "${{ matrix.tree }}" "${{ matrix.variant }}"
