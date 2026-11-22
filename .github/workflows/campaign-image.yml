@@ -62,7 +62,7 @@ jobs:
       packages: write
       id-token: write
       attestations: write
-    uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@bab27478f41284acdfd5b069d9bbdd9279cb934f # main@2026-11-22
+    uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@bf9b6fc23e61e5b83ce89117116f4158ade62a8b # main@2026-11-22
     with:
       dependencies: ${{ needs.inputs.outputs.dependencies }}
       modules: ${{ needs.inputs.outputs.modules }}
