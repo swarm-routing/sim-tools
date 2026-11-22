@@ -7,7 +7,7 @@ bestpractices_project = "16817"
 citation = true
 # the Zenodo concept record (read from zenodo.org on 2026-11-11, v0.1.0 archived)
 zenodo_concept = "24136068"
-title = "ns3-tools"
+title = "sim-tools"
 module = "routing-bench"
 dual = ["python/", "tools/"]
 ci_workflow = "ns3.yml"
@@ -80,6 +80,11 @@ format = """
 @$(MAKE) --no-print-directory org-tools
 ruff format --config "$(ORG_DIR)/ruff.toml" python"""
 
+
+[docs]
+# the project page keeps its id on the site until the site follows the rename
+# (swarm-routing/swarm-routing.github.io#234; swarm-routing/.github#672)
+arena_id = "ns3-tools"
 [settings]
 # GitHub settings as code: swarm-routing/.github tools/repo-settings (swarm-routing/.github#117).
 description = "Protocol-agnostic ns-3 comparison and diagnostics tooling: the routing-bench harness every protocol arm registers with, the readers and paired statistics for its marker lines behind the ns3-tool CLI, the ns3-campaign driver, and (planned) probes and universal arenas."
