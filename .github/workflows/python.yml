@@ -54,8 +54,12 @@ jobs:
           python3 -I tools/checks/check-refs.py docs/ns3-bugs.md docs/ns3-rcapa/
       - name: Install the package; console scripts run
         if: steps.changes.outputs.docs-only != 'true'
+        timeout-minutes: 5  # an install, as the PyYAML step (seconds in a green run)
         run: |
-          python3 -m pip install ./python
+          # the build backend from its hash-pinned lock, then the package with no
+          # index fetch: no dependencies, no isolated build (swarm-routing/.github#716)
+          python3 -m pip install --quiet --only-binary :all: --require-hashes -r tools/requirements/build.txt
+          python3 -m pip install --no-deps --no-build-isolation ./python
           cd "$RUNNER_TEMP"
           ns3-bench-parse "$GITHUB_WORKSPACE"/python/tests/fixtures/cells/fanet-main-6arm.txt | grep -q '95% CI'
           ns3-scenario-check results "$GITHUB_WORKSPACE"/python/tests/fixtures/cells/sat-base-app517.txt \
@@ -109,7 +113,7 @@ jobs:
         if: steps.changes.outputs.docs-only != 'true'
         timeout-minutes: 5
         run: |
-          python3 -m pip install --quiet --only-binary :all: pyyaml==6.0.3
+          python3 -m pip install --quiet --only-binary :all: --require-hashes -r tools/requirements/pyyaml.txt
       - run: NS3_TOOL_ANTHOCNET="$PWD/anthocnet" python3 python/tests/test_change_plan.py
         if: steps.changes.outputs.docs-only != 'true'
 
