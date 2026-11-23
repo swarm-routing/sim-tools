@@ -6,13 +6,13 @@
 |---|---|
 | ID | NS3-002 |
 | RCAPA ticket | [swarm-routing/ns3-tools#239](https://github.com/swarm-routing/ns3-tools/issues/239) |
-| Status | open upstream; draft ready, not yet reported; worked around (`--isolateArms`) |
+| Status | open upstream; reported ([nsnam/ns-3-dev#1409](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1409), 2026-11-19); worked around (`--isolateArms`) |
 | Found | 2026-08-05 in [swarm-routing/AntHocNet#362](https://github.com/swarm-routing/AntHocNet/issues/362); cause shown 2026-11-15 in [swarm-routing/ns3-tools#198](https://github.com/swarm-routing/ns3-tools/issues/198) |
-| Last checked | 2026-11-16: `ArmIsolationTest` re-run on ns-3-dev `master` `8ec9b4a1` and on ns-3.49, 3 tries each ([comment](https://github.com/swarm-routing/ns3-tools/issues/206#issuecomment-6904893072)); the declarations and loops below read at the ns-3.48 and ns-3.49 tags |
-| ns-3 versions | run: 3.42 (swarm-routing/AntHocNet#362's CI), 3.48 (swarm-routing/AntHocNet#1039), 3.49 (swarm-routing/ns3-tools#198, swarm-routing/ns3-tools#212, 2026-11-16), ns-3-dev `master` `8ec9b4a190b52dadb5a3c35572dec687e1b75379` of 2026-11-11 (2026-11-16); read: 3.42, 3.48, 3.49; earlier releases not checked |
+| Last checked | 2026-11-22: DSDV on a multi-interface topology (`dsdv-ring`), ns-3.49 and ns-3-dev `master` `a150de8f`, 3 tries each: the send order moves with the heap, the rows do not ([swarm-routing/ns3-tools#301](https://github.com/swarm-routing/ns3-tools/issues/301)); DSDV's `NotifyRemoveAddress()` read at ns-3.49. 2026-11-16: `ArmIsolationTest` re-run on ns-3-dev `master` `8ec9b4a1` and on ns-3.49, 3 tries each ([comment](https://github.com/swarm-routing/ns3-tools/issues/206#issuecomment-6904893072)); the declarations and loops below read at the ns-3.48 and ns-3.49 tags |
+| ns-3 versions | run: 3.42 (swarm-routing/AntHocNet#362's CI), 3.48 (swarm-routing/AntHocNet#1039), 3.49 (swarm-routing/ns3-tools#198, swarm-routing/ns3-tools#212, 2026-11-16), ns-3-dev `master` `8ec9b4a190b52dadb5a3c35572dec687e1b75379` of 2026-11-11 (2026-11-16), `master` `a150de8f8866ba0f1d8ddbeba8df91e94f02ac31` (DSDV, 2026-11-22); read: 3.42, 3.48, 3.49; earlier releases not checked |
 | Modules | `aodv` (`RoutingProtocol::m_socketAddresses`, `m_socketSubnetBroadcastAddresses`), `dsdv` (`RoutingProtocol::m_socketAddresses`); `core` (`Ptr<T>::operator<`) |
-| Impact on our repositories | any scenario with more than one interface per node (AntHocNet's `isl-grid` and `leo-walker`, routing-bench test arms) gives stock AODV and DSDV rows that move with unrelated allocations: byte-identity checks and attribution controls fail on them. Single-interface Wi-Fi scenarios (routing-compare's own) are unaffected. No published conclusion changed: the paired deltas stayed within noise (swarm-routing/AntHocNet#675). |
-| Upstream | not yet reported; text in [swarm-routing/ns3-tools#206](https://github.com/swarm-routing/ns3-tools/issues/206) |
+| Impact on our repositories | any scenario with more than one interface per node (AntHocNet's `isl-grid` and `leo-walker`, routing-bench test arms) gives stock AODV rows that move with unrelated allocations (DSDV's send order moves too, but its rows did not on the one topology tried, swarm-routing/ns3-tools#301): byte-identity checks and attribution controls fail on them. Single-interface Wi-Fi scenarios (routing-compare's own) are unaffected. No published conclusion changed: the paired deltas stayed within noise (swarm-routing/AntHocNet#675). |
+| Upstream | [nsnam/ns-3-dev#1409](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1409), filed 2026-11-19 through [swarm-routing/ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report) from the text in [swarm-routing/ns3-tools#206](https://github.com/swarm-routing/ns3-tools/issues/206); a volunteer is preparing the merge request, we open none |
 
 Stock AODV and DSDV keep one socket per interface in a `std::map` keyed by
 `Ptr<Socket>`, which orders by raw pointer, so the maps iterate in heap-address
@@ -48,6 +48,17 @@ depending only on what ran or allocated before it in the process.
    3.7024096 → 4.3779808 and `l3tx` 2432 → 2431; with the maps ordered by
    interface index every churn level gave the identical row
    ([swarm-routing/ns3-tools#198](https://github.com/swarm-routing/ns3-tools/issues/198#issuecomment-6896069314)).
+5. 2026-11-22, DSDV checked the same way (swarm-routing/ns3-tools#301): stock
+   DSDV on the paper scenario with the 8 nodes also joined in a wired ring
+   (three active interfaces per node), alone and after one or three other
+   arms in the same process. The order of DSDV's per-interface sends moved
+   with the heap (alone, every node sent on interfaces `1 2 3`; after
+   `heap-churn`, 7 of 8 nodes sent in another order, e.g. node 0 `3 1 2` on
+   ns-3.49 and `1 3 2` on `master`), but the `dsdv-ring` rows were identical
+   in every run: `matches`, 3 of 3 tries on ns-3.49 and on ns-3-dev `master`
+   `a150de8f`. So on this
+   topology DSDV's results do not depend on the heap; that no topology makes
+   them depend on it is not shown.
 
 ## Reproduction
 
@@ -93,6 +104,56 @@ the recorded runs used the tag `latest-debug` on that day.)
   describes one (3×3 point-to-point torus, stock AODV, UDP traffic, a few
   thousand allocations kept alive before a second `Simulator::Run()`).
 
+**DSDV** (swarm-routing/ns3-tools#301). The same suite carries `dsdv-ring`:
+stock DSDV with the nodes also joined in a ring of wired links (one
+`SimpleChannel` per link, so each node has its Wi-Fi interface and two wired
+ones), with DSDV's `EnableBuffering` off (with it on, this topology hits
+NS3-003 at +4.376445874 s on node 1: a queued packet sent on the empty route of a next hop
+with no entry of its own, `NS_ASSERT failed, cond="interface >= 0"` in
+`Ipv4L3Protocol::SendRealOut`). `ArmIsolationTest` runs it with
+`--isolateArms=0` alone, after `heap-churn`, and after `heap-churn,olsr,aodv`,
+and reports each comparison:
+
+```text
+isolateArms=0: dsdv-ring alone (#301):
+##RUN## 1 dsdv-ring 73.3 2.4 9.5 1.01 10.64 2.86 0.5 inf 6.9368
+##RUN## 2 dsdv-ring 40.0 2.3 5.5 0.55 21.50 3.50 inf inf 14.0435
+isolateArms=0: dsdv-ring after heap-churn matches its rows alone (#301)
+isolateArms=0: dsdv-ring after heap-churn,olsr,aodv matches its rows alone (#301)
+```
+
+The same output, 3 of 3 tries, on ns-3.49 (`ns3-dev:latest-debug`) and on
+ns-3-dev `master` `a150de8f8866ba0f1d8ddbeba8df91e94f02ac31`, while
+`aodv-spare-if` printed `DIFFERS` in the same runs. A scratch print of each
+node's socket-map order, as interface indices, at its first periodic update
+(`probe/order.patch` on the validation branch `claude/dsdv-301-probe`, not
+merged) showed that the order did move, the same in each of the 3 tries:
+
+| run | ns-3.49 | `master` `a150de8f` |
+|-----|---------|---------------------|
+| alone | every node `1 2 3` | every node `1 2 3` |
+| after `heap-churn` | 7 of 8 changed (node 0 `3 1 2`, node 1 `2 3 1`, node 2 `3 2 1`, ...) | 7 of 8 changed (node 0 `1 3 2`, node 1 `2 1 3`, node 2 `2 1 3`, ...) |
+| after `heap-churn,olsr,aodv` | 7 of 8 changed | 6 of 8 changed |
+
+Run: [probe-301](https://github.com/swarm-routing/ns3-tools/actions/runs/45084812696)
+(jobs `dsdv-ring on release|master, stock|order`); the same locally in
+`ns3-dev:latest-debug` (ns-3.49), with this command (the AODV command above
+stays at `bb2951e`, whose suite has no `dsdv-ring`):
+
+```bash
+git clone https://github.com/swarm-routing/ns3-tools && cd ns3-tools
+git fetch origin afc1aa00d8ddd3836024d490a44a12cb85f567d5
+git checkout afc1aa00d8ddd3836024d490a44a12cb85f567d5
+docker run --rm -v "$PWD:/src:ro" \
+    ghcr.io/swarm-routing/ns3-dev@sha256:10b2dfad3a936be95a14f59a33348de4bfebe798a77a7d6f2ceeb4bc2980a349 \
+    ns3-build-contrib --test routing-bench=/src/ns3/routing-bench
+```
+
+(The commit is the one that added `dsdv-ring`, swarm-routing/ns3-tools#306's
+head; the digest is `latest-debug` = `3.49-debug` as used for the local runs.
+The minimal program is
+[`routing-bench-test-suite.cc` at that commit](https://github.com/swarm-routing/ns3-tools/blob/afc1aa00d8ddd3836024d490a44a12cb85f567d5/ns3/routing-bench/test/routing-bench-test-suite.cc).)
+
 ## Root cause: five whys
 
 1. **Why does the same seed give different AODV rows?** Which interface sends
@@ -122,8 +183,10 @@ the recorded runs used the tag `latest-debug` on that day.)
    (`:2182`, `:2223`). DSDV draws nothing per socket: its triggered and
    periodic updates send in socket-map order (`dsdv-routing-protocol.cc:820`
    `SendTriggeredUpdate`, `:902` `SendPeriodicUpdate`), and the periodic
-   timer's jitter is drawn once after the loop (`:959–960`). That DSDV's send
-   order alone moves results is a hypothesis: no DSDV run has shown it yet.
+   timer's jitter is drawn once after the loop (`:959–960`). DSDV's send
+   order does move with the heap, but on the one multi-interface topology
+   tried its rows did not (swarm-routing/ns3-tools#301, detection item 5): no
+   DSDV result has been shown to depend on the heap.
 5. **Why did our checks not see it for months?** With one interface per node
    each map holds one entry and the order cannot vary, so every single-interface
    harness passed (swarm-routing/AntHocNet#362: `anthocnet-compare` passed, `isl-grid` failed). And a
@@ -134,8 +197,8 @@ the recorded runs used the tag `latest-debug` on that day.)
 
 **Root cause.** A container keyed by pointer value orders by heap address;
 stock AODV and DSDV use one as the per-interface iteration order. AODV consumes
-random draws in that order (shown); DSDV only sends in it (its effect on
-results not yet shown).
+random draws in that order (shown); DSDV only sends in it (the order shown
+to move, its results not: swarm-routing/ns3-tools#301).
 
 ## Diagrams
 
@@ -270,6 +333,7 @@ The code is stock ns-3: we do not patch it (org golden rule 2; the
 | Action | Where | Status |
 |--------|-------|--------|
 | `ArmIsolationTest`: every stock arm and `aodv-spare-if` alone vs after `heap-churn` and other arms must be identical when isolated; the stock single-process behaviour is reported | ns3-tools `routing-bench-test-suite.cc` (swarm-routing/ns3-tools#202, swarm-routing/ns3-tools#212) | done |
+| `ArmIsolationTest` also reports `dsdv-ring` (stock DSDV, three active interfaces per node) alone vs after `heap-churn` and after `heap-churn,olsr,aodv`, in one process | ns3-tools `routing-bench-test-suite.cc` ([swarm-routing/ns3-tools#301](https://github.com/swarm-routing/ns3-tools/issues/301)) | done |
 | The suite also runs through the bare test runner, with a second arm module installed | ns3-tools `.github/workflows/ns3.yml` ([swarm-routing/ns3-tools#214](https://github.com/swarm-routing/ns3-tools/pull/214), swarm-routing/ns3-tools#212) | done |
 | AntHocNet's seed-independence gate (order case for `isl-grid`) | swarm-routing/AntHocNet `tools/checks/check-seed-independence.py` (swarm-routing/AntHocNet#471) | done |
 | Measure the dependence on ns-3-dev `master` with numbers (the differing `##RUN##` fields, swarm-routing/ns3-tools#198's torus `delaySum`/`l3tx`) for the upstream text | [swarm-routing/ns3-tools#244](https://github.com/swarm-routing/ns3-tools/issues/244) | open |
@@ -278,19 +342,53 @@ The code is stock ns-3: we do not patch it (org golden rule 2; the
 
 ## Upstream report
 
-**Status: draft ready, not yet reported.** The ready-to-file text (title,
-modules and versions, description, how to reproduce, expected, proposed fix)
-is kept in [swarm-routing/ns3-tools#206](https://github.com/swarm-routing/ns3-tools/issues/206),
-"Ready-to-file upstream bug text"; edits are made there. The maintainer files
-it on the nsnam GitLab under their own account; the link then goes into swarm-routing/ns3-tools#206,
-swarm-routing/ns3-tools#239 and the register. The stock dependence was re-shown on ns-3-dev `master` `8ec9b4a1`
+**Status: reported** as [nsnam/ns-3-dev#1409](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1409)
+on 2026-11-19, by [swarm-routing/ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report)
+from the text kept in [swarm-routing/ns3-tools#206](https://github.com/swarm-routing/ns3-tools/issues/206);
+replies go out from that repository's `replies/NS3-002/`. A volunteer
+(Aarohi Sharma) offered to write the fix; we review and test it, and open no
+merge request ourselves. The stock dependence was re-shown on ns-3-dev `master` `8ec9b4a1`
 ([comment](https://github.com/swarm-routing/ns3-tools/issues/206#issuecomment-6904893072)); a standalone stock-ns-3 program for the report is
 [swarm-routing/ns3-tools#241](https://github.com/swarm-routing/ns3-tools/issues/241).
 
 Proposed fix (from swarm-routing/ns3-tools#206): key the maps by interface index, for example
 `std::map<uint32_t, std::pair<Ptr<Socket>, Ipv4InterfaceAddress>>`, so
 iteration follows interface order; the send loops keep their bodies and the
-lookups by socket or address become lookups by interface index.
+lookups by socket or address become lookups by interface index. The receive
+path then needs the interface index directly, for example bound into the
+receive callback when the socket is created: DSDV's receive sockets are bound
+to `Ipv4Address::GetAny()` (`RecvDsdv()` looks the socket up with
+`m_socketAddresses[socket]`, `dsdv-routing-protocol.cc:562`), so a socket's
+own address does not identify its interface.
+
+**Why the index-keyed fix, not a comparator on the bound device**
+(swarm-routing/ns3-tools#301, found by the volunteer's review of 2026-11-22,
+[note](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1409#note_4295870704)).
+The smaller alternative, keeping `Ptr<Socket>` keys with a comparator on
+`socket->GetBoundNetDevice()->GetIfIndex()` (the change AntHocNet made in
+swarm-routing/AntHocNet#471), needs every socket bound before it is inserted.
+DSDV's `NotifyInterfaceUp()` (`:1003`) and `NotifyAddAddress()` (`:1065`)
+bind theirs with `BindToNetDevice()`, and so does AODV's
+`NotifyRemoveAddress()`, but DSDV's `NotifyRemoveAddress()`
+(`dsdv-routing-protocol.cc:1082–1101`, ns-3.49) creates its replacement
+socket without `BindToNetDevice()`:
+
+```cpp
+            Ptr<Socket> socket =
+                Socket::CreateSocket(GetObject<Node>(), UdpSocketFactory::GetTypeId());
+            NS_ASSERT(socket);
+            socket->SetRecvCallback(MakeCallback(&RoutingProtocol::RecvDsdv, this));
+            // Bind to any IP address so that broadcasts can be received
+            socket->Bind(InetSocketAddress(Ipv4Address::GetAny(), DSDV_PORT));
+            socket->SetAllowBroadcast(true);
+            m_socketAddresses.insert(std::make_pair(socket, iface));
+```
+
+That socket has no bound device, so the comparator would have nothing to
+order it by, and would fall back to pointer order. `NotifyRemoveAddress()` is
+given the interface index `i`, so a map keyed by the index works there too.
+The missing `BindToNetDevice()` is a separate inconsistency that the same
+merge request could fix.
 
 ## Timeline
 
@@ -301,10 +399,12 @@ lookups by socket or address become lookups by interface index.
 | 2026-10-16 | swarm-routing/AntHocNet#675: stock AODV satellite rows move with unrelated code (v2.2.0 re-baseline) |
 | 2026-11-15 | swarm-routing/AntHocNet#1039 (the `leo-walker` gate), swarm-routing/ns3-tools#198 (cause shown), swarm-routing/ns3-tools#202 merged (`--isolateArms`, v1.1.0), swarm-routing/ns3-tools#206 opened with the upstream text, swarm-routing/AntHocNet#1059 merged; swarm-routing/ns3-tools#211 and swarm-routing/ns3-tools#212 (the test's own heap, v1.1.1) |
 | 2026-11-16 | registered as NS3-002, RCAPA ticket swarm-routing/ns3-tools#239; `ArmIsolationTest` still reports `DIFFERS` on ns-3-dev `master` `8ec9b4a1` and on 3.49, 3/3 each ([comment](https://github.com/swarm-routing/ns3-tools/issues/206#issuecomment-6904893072)) |
+| 2026-11-19 | reported upstream as [nsnam/ns-3-dev#1409](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1409) |
+| 2026-11-22 | the volunteer's DSDV review on [nsnam/ns-3-dev#1409](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1409): DSDV's `NotifyRemoveAddress()` creates an unbound socket (answered in swarm-routing/ns3-upstream-report#74); swarm-routing/ns3-tools#301: DSDV's send order moves with the heap, its rows do not (`dsdv-ring`, `matches` 3/3 on ns-3.49 and `master` `a150de8f`) |
 
 ## Links
 
 - Investigation: [swarm-routing/AntHocNet#362](https://github.com/swarm-routing/AntHocNet/issues/362), [swarm-routing/AntHocNet#675](https://github.com/swarm-routing/AntHocNet/issues/675), [swarm-routing/AntHocNet#1039](https://github.com/swarm-routing/AntHocNet/issues/1039), [swarm-routing/ns3-tools#198](https://github.com/swarm-routing/ns3-tools/issues/198), [swarm-routing/ns3-tools#211](https://github.com/swarm-routing/ns3-tools/issues/211)
 - Fixes on our side: [swarm-routing/AntHocNet#471](https://github.com/swarm-routing/AntHocNet/pull/471), [swarm-routing/AntHocNet#1040](https://github.com/swarm-routing/AntHocNet/pull/1040) (hid it), [swarm-routing/AntHocNet#1059](https://github.com/swarm-routing/AntHocNet/pull/1059), [swarm-routing/ns3-tools#202](https://github.com/swarm-routing/ns3-tools/pull/202), [swarm-routing/ns3-tools#212](https://github.com/swarm-routing/ns3-tools/pull/212), [swarm-routing/ns3-tools#214](https://github.com/swarm-routing/ns3-tools/pull/214)
-- Upstream text: [swarm-routing/ns3-tools#206](https://github.com/swarm-routing/ns3-tools/issues/206); RCAPA ticket: [swarm-routing/ns3-tools#239](https://github.com/swarm-routing/ns3-tools/issues/239)
+- Upstream: [nsnam/ns-3-dev#1409](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1409); its text: [swarm-routing/ns3-tools#206](https://github.com/swarm-routing/ns3-tools/issues/206); DSDV check: [swarm-routing/ns3-tools#301](https://github.com/swarm-routing/ns3-tools/issues/301); RCAPA ticket: [swarm-routing/ns3-tools#239](https://github.com/swarm-routing/ns3-tools/issues/239)
 - ns-3 sources (ns-3.49 tag): [`aodv-routing-protocol.h`](https://gitlab.com/nsnam/ns-3-dev/-/blob/ns-3.49/src/aodv/model/aodv-routing-protocol.h), [`aodv-routing-protocol.cc`](https://gitlab.com/nsnam/ns-3-dev/-/blob/ns-3.49/src/aodv/model/aodv-routing-protocol.cc), [`dsdv-routing-protocol.h`](https://gitlab.com/nsnam/ns-3-dev/-/blob/ns-3.49/src/dsdv/model/dsdv-routing-protocol.h), [`dsdv-routing-protocol.cc`](https://gitlab.com/nsnam/ns-3-dev/-/blob/ns-3.49/src/dsdv/model/dsdv-routing-protocol.cc), [`ptr.h`](https://gitlab.com/nsnam/ns-3-dev/-/blob/ns-3.49/src/core/model/ptr.h)

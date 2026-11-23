@@ -10,6 +10,7 @@
  */
 
 #include "ns3/aodv-helper.h"
+#include "ns3/boolean.h"
 #include "ns3/ipv4.h"
 #include "ns3/routing-bench-arm.h"
 #include "ns3/simple-channel.h"
@@ -122,7 +123,60 @@ private:
     AodvHelper m_aodv;
 };
 
+// NS3-002 for DSDV (#301). Stock DSDV, with the nodes also joined in a ring
+// of wired links (SimpleNetDevice pairs, one SimpleChannel per link), so
+// every node has three active interfaces. DSDV keeps one socket per
+// interface in std::map<Ptr<Socket>, Ipv4InterfaceAddress> and sends each
+// update on them in that map's order, heap-address order; it draws no random
+// number inside those loops, so what the heap can change is the order of the
+// sends, and with it the order of the simultaneous receptions they cause.
+class RingDsdvArm : public Arm {
+public:
+    std::string Name() const override { return "dsdv-ring"; }
+    void InstallRouting(InternetStackHelper& internet, RunContext& run) override {
+        m_dsdv->InstallRouting(internet, run);
+    }
+    int64_t AssignStreams(RunContext& run, int64_t stream) override {
+        return m_dsdv->AssignStreams(run, stream);
+    }
+    void AfterAddresses(RunContext& run, const Ipv4InterfaceContainer&) override {
+        const uint32_t n = run.nodes.GetN();
+        // Buffering off: with it, LookForQueuedPackets() uses the route to a
+        // next hop without checking that LookupRoute() found one, and on these
+        // nodes a next hop can be an address with no entry of its own, so a
+        // queued packet goes out on an empty route (NS_ASSERT "interface >= 0"
+        // in Ipv4L3Protocol::SendRealOut). That is NS3-003 (docs/ns3-bugs.md);
+        // this test is about the send order.
+        for (uint32_t k = 0; k < n; ++k) {
+            run.nodes.Get(k)
+                ->GetObject<Ipv4>()
+                ->GetRoutingProtocol()
+                ->SetAttribute("EnableBuffering", BooleanValue(false));
+        }
+        for (uint32_t k = 0; k < n; ++k) {
+            Ptr<SimpleChannel> link = CreateObject<SimpleChannel>();
+            for (uint32_t end = 0; end < 2; ++end) {
+                Ptr<Node> node = run.nodes.Get((k + end) % n);
+                Ptr<SimpleNetDevice> dev = CreateObject<SimpleNetDevice>();
+                dev->SetChannel(link);
+                dev->SetAddress(Mac48Address::ConvertFrom(Mac48Address::Allocate()));
+                node->AddDevice(dev);
+                Ptr<Ipv4> ipv4 = node->GetObject<Ipv4>();
+                const uint32_t ifIndex = ipv4->AddInterface(dev);
+                ipv4->AddAddress(ifIndex,
+                                 Ipv4InterfaceAddress(Ipv4Address(0xac110001u + (k << 8) + end),
+                                                      Ipv4Mask("255.255.255.0")));
+                ipv4->SetUp(ifIndex);
+            }
+        }
+    }
+
+private:
+    Ptr<Arm> m_dsdv = Registry().Make("dsdv");
+};
+
 Ptr<Arm> MakeSpareIfAodvArm() { return Create<SpareIfAodvArm>(); }
+Ptr<Arm> MakeRingDsdvArm() { return Create<RingDsdvArm>(); }
 Ptr<Arm> MakeHeapChurnArm() { return Create<HeapChurnArm>(); }
 
 // The harness run once per command line, each in a child process, every
@@ -361,6 +415,9 @@ private:
         if (!Registry().Has("heap-churn")) {
             RegisterArm("heap-churn", "test: AODV that reshapes the heap", &MakeHeapChurnArm);
         }
+        if (!Registry().Has("dsdv-ring")) {
+            RegisterArm("dsdv-ring", "test: DSDV with a wired ring as well", &MakeRingDsdvArm);
+        }
         const std::vector<std::string> base{"--scenario=paper", "--nNodes=8", "--time=8",
                                             "--runs=2", "--perf=0"};
         const auto with = [&base](std::vector<std::string> extra) {
@@ -393,6 +450,11 @@ private:
         runs.push_back(meshArgs("--protocols=hwmp,olsr"));
         runs.push_back(meshArgs("--protocols=hwmp,olsr"));
         runs.back().push_back("--isolateArms=0");
+        // 11-13 (#301): dsdv-ring in one process, alone, after one heap-churn
+        // arm and after it and two more arms: three levels of reshaping.
+        runs.push_back(with({"--isolateArms=0", "--protocols=dsdv-ring"}));
+        runs.push_back(with({"--isolateArms=0", "--protocols=heap-churn,dsdv-ring"}));
+        runs.push_back(with({"--isolateArms=0", "--protocols=heap-churn,olsr,aodv,dsdv-ring"}));
         const std::vector<ChildRun> res = RunHarnessInChildren(runs);
         for (std::size_t i = 0; i < res.size(); ++i) {
             NS_TEST_ASSERT_MSG_EQ(res[i].status, 0, "run " << i << " exits cleanly");
@@ -432,6 +494,19 @@ private:
                           ? "matches"
                           : "DIFFERS from")
                   << " its rows alone (#198)\n";
+        const std::string dsdvAlone = ArmRows(res[11].output, "dsdv-ring");
+        NS_TEST_ASSERT_MSG_NE(dsdvAlone.find("##RUN## 2 dsdv-ring"), std::string::npos,
+                              "dsdv-ring printed its rows");
+        std::clog << "isolateArms=0: dsdv-ring alone (#301):\n"
+                  << MarkerLines(dsdvAlone, "##RUN## ");
+        for (std::size_t i : {std::size_t{12}, std::size_t{13}}) {
+            const std::string rows = ArmRows(res[i].output, "dsdv-ring");
+            std::clog << "isolateArms=0: dsdv-ring after "
+                      << (i == 12 ? "heap-churn" : "heap-churn,olsr,aodv") << " "
+                      << (rows == dsdvAlone ? "matches" : "DIFFERS from")
+                      << " its rows alone (#301)\n";
+            if (rows != dsdvAlone) std::clog << "alone:\n" << dsdvAlone << "after:\n" << rows;
+        }
     }
 };
 
