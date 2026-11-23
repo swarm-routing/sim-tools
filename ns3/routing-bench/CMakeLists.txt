@@ -2,7 +2,8 @@
 # #764): the arm contract and registry (#766), the harness itself -- scenario,
 # traffic, measurement, drop book, markers (#767) -- and the arms of stock
 # ns-3 (aodv, olsr, dsdv, hwmp). It links only stock ns-3 and names no other
-# arm: arm modules depend on routing-bench, never the reverse. The programs
+# arm: arm modules depend on routing-bench, never the reverse. The aodv arm
+# runs behind the ICMP no-route guard (NS3-001, nsnam/ns-3-dev!3101). The programs
 # (routing-compare, and the anthocnet-compare alias) are in examples/.
 #
 # Lives in swarm-routing/ns3-tools (ns3/routing-bench/, moved from AntHocNet,
@@ -14,7 +15,11 @@
 #  - RouteInput callbacks went from by-value to const-reference in ns-3.37.
 #  - TestSuite/TestCase enums became scoped (enum class) in ns-3.42, and the
 #    deprecated unscoped aliases were removed in ns-3.47.
+#  - The test suite asserts that unguarded AODV livelocks on exactly ns-3.49
+#    (NS3-001, docs/ns3-rcapa/ns3-rcapa-aodv-icmp-livelock.md) and never before;
+#    on a later release it only reports, so it needs the minor version.
 if(NS3_VER MATCHES "^3\\.([0-9]+)")
+  add_compile_definitions(ROUTING_BENCH_NS3_MINOR=${CMAKE_MATCH_1})
   if(CMAKE_MATCH_1 LESS 37)
     add_compile_definitions(ROUTING_BENCH_NS3_ROUTEINPUT_BYVALUE)
   endif()
@@ -44,11 +49,15 @@ build_lib(
     model/routing-bench-run.cc
     model/urban-obstacle-loss-model.cc
     model/source-refusal-counter.cc
+    model/icmp-error-guard-routing.cc
+    helper/icmp-error-guard-helper.cc
     helper/stock-arms.cc
   HEADER_FILES
     model/routing-bench-arm.h
     model/urban-obstacle-loss-model.h
     model/source-refusal-counter.h
+    model/icmp-error-guard-routing.h
+    helper/icmp-error-guard-helper.h
     helper/stock-arms.h
   LIBRARIES_TO_LINK
     ${libcore}

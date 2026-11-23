@@ -5,18 +5,33 @@
  * Unit tests for the routing-bench arm registry (ADR-0027, #766):
  * registration, lookup, the rejection of a duplicate or empty name, the
  * optional hooks' defaults, and the stock arms' names and stream-free hwmp
- * arm; and that an arm's rows do not depend on the arms run before it
- * (--isolateArms, ns3-tools#198).
+ * arm; that an arm's rows do not depend on the arms run before it
+ * (--isolateArms, ns3-tools#198); and the ICMP no-route guard of the aodv arm
+ * (NS3-001, #238): nsnam/ns-3-dev!3101's own test, and a partitioned AODV
+ * network that livelocks on ns-3.49 without the guard and runs with it.
  */
 
 #include "ns3/aodv-helper.h"
+#include "ns3/aodv-routing-protocol.h"
 #include "ns3/boolean.h"
+#include "ns3/icmp-error-guard-helper.h"
+#include "ns3/icmpv4.h"
+#include "ns3/inet-socket-address.h"
+#include "ns3/internet-stack-helper.h"
+#include "ns3/ipv4-address-helper.h"
+#include "ns3/ipv4-l3-protocol.h"
+#include "ns3/ipv4-raw-socket-factory.h"
+#include "ns3/ipv4-static-routing-helper.h"
 #include "ns3/ipv4.h"
 #include "ns3/routing-bench-arm.h"
 #include "ns3/simple-channel.h"
+#include "ns3/simple-net-device-helper.h"
 #include "ns3/simple-net-device.h"
+#include "ns3/simulator.h"
 #include "ns3/stock-arms.h"
 #include "ns3/test.h"
+#include "ns3/udp-socket-factory.h"
+#include "ns3/uinteger.h"
 
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -39,6 +54,14 @@
 #else
 #define BENCH_TEST_TYPE_UNIT UNIT
 #define BENCH_TEST_QUICK TestCase::QUICK
+#endif
+
+// Does this ns-3 have Ipv4L3Protocol::SendIcmpNoRoute (new in 3.49, NS3-001)?
+// A non-numeric NS3_VER (3-dev) has it.
+#if defined(ROUTING_BENCH_NS3_MINOR) && ROUTING_BENCH_NS3_MINOR < 49
+constexpr bool kIcmpNoRoute = false;
+#else
+constexpr bool kIcmpNoRoute = true;
 #endif
 
 // A --coverage build's counters, written before the child's _exit (strong, and
@@ -510,6 +533,254 @@ private:
     }
 };
 
+namespace {
+
+// The router's Destination Unreachable messages, as the source's raw ICMP
+// socket sees them.
+struct IcmpSink {
+    uint32_t unreach = 0;
+    Ipv4Address from;
+
+    void Receive(Ptr<Socket> s) {
+        Address addr;
+        while (Ptr<Packet> p = s->RecvFrom(0xffffffff, 0, addr)) {
+            Ipv4Header ip;
+            if (p->GetSize() < ip.GetSerializedSize()) continue;
+            p->RemoveHeader(ip);
+            if (ip.GetProtocol() != 1 || p->GetSize() < 4) continue;
+            Icmpv4Header icmp;
+            p->RemoveHeader(icmp);
+            if (icmp.GetType() == Icmpv4Header::ICMPV4_DEST_UNREACH) {
+                ++unreach;
+                from = ip.GetSource();
+            }
+        }
+    }
+};
+
+void SendIcmpOfType(Ptr<Socket> s, uint8_t type) {
+    Ptr<Packet> p = Create<Packet>(8);
+    Icmpv4Header icmp;
+    icmp.SetType(type);
+    icmp.SetCode(0);
+    p->AddHeader(icmp);
+    s->SendTo(p, 0, InetSocketAddress(Ipv4Address("10.9.9.9"), 0));
+}
+
+}  // namespace
+
+// NS3-001: nsnam/ns-3-dev!3101's change to ns-3's ipv4-icmp-no-route test,
+// with the router's routing (static, so any protocol does) behind the guard.
+//   A (10.0.0.1) ---- (10.0.0.2) R (10.0.1.1) ---- (nothing)
+// R forwards and has no route to 10.9.9.0/24. A sends one ICMP message of a
+// type to 10.9.9.9: an Echo Request (8) is answered with one net unreachable
+// from R, an ICMP error (3, 4, 5, 11, 12) with none. Before ns-3.49 there is
+// no no-route error at all, so the Echo Request gets none either.
+class IcmpNoRouteGuardTest : public TestCase {
+public:
+    IcmpNoRouteGuardTest()
+        : TestCase("icmp guard: ns-3-dev!3101's no-route test, router guarded (NS3-001)") {}
+
+private:
+    void DoRun() override {
+        for (uint8_t type : {8, 3, 4, 5, 11, 12}) RunType(type);
+    }
+
+    void RunType(uint8_t type) {
+        Ptr<Node> a = CreateObject<Node>();
+        Ptr<Node> r = CreateObject<Node>();
+        SimpleNetDeviceHelper link;
+        link.SetNetDevicePointToPointMode(true);
+        NetDeviceContainer net0 = link.Install(NodeContainer(a, r));
+        NetDeviceContainer net1 = link.Install(NodeContainer(r));
+
+        InternetStackHelper plain;
+        plain.Install(a);
+        IcmpErrorGuardHelper guard{Ipv4StaticRoutingHelper()};
+        InternetStackHelper guarded;
+        guarded.SetRoutingHelper(guard);
+        guarded.Install(r);
+
+        auto addIf = [](Ptr<Node> n, Ptr<NetDevice> d, const char* addr) {
+            Ptr<Ipv4> ipv4 = n->GetObject<Ipv4>();
+            const uint32_t i = ipv4->AddInterface(d);
+            ipv4->AddAddress(i, Ipv4InterfaceAddress(Ipv4Address(addr), Ipv4Mask("255.255.255.0")));
+            ipv4->SetUp(i);
+        };
+        addIf(a, net0.Get(0), "10.0.0.1");
+        addIf(r, net0.Get(1), "10.0.0.2");
+        addIf(r, net1.Get(0), "10.0.1.1");
+        r->GetObject<Ipv4>()->SetAttribute("IpForward", BooleanValue(true));
+        Ipv4StaticRoutingHelper().GetStaticRouting(a->GetObject<Ipv4>())->SetDefaultRoute(
+            Ipv4Address("10.0.0.2"), 1);
+
+        IcmpSink sink;
+        Ptr<SocketFactory> raw = a->GetObject<Ipv4RawSocketFactory>();
+        Ptr<Socket> rx = raw->CreateSocket();
+        rx->SetAttribute("Protocol", UintegerValue(1));
+        rx->Bind(InetSocketAddress(Ipv4Address::GetAny(), 0));
+        rx->SetRecvCallback(MakeCallback(&IcmpSink::Receive, &sink));
+        Ptr<Socket> tx = raw->CreateSocket();
+        tx->SetAttribute("Protocol", UintegerValue(1));
+        tx->Bind(InetSocketAddress(Ipv4Address("10.0.0.1"), 0));
+
+        Simulator::ScheduleWithContext(a->GetId(), Seconds(1), &SendIcmpOfType, tx, type);
+        Simulator::Stop(Seconds(5));
+        Simulator::Run();
+        Simulator::Destroy();
+
+        const IcmpErrorGuardCounters& k = guard.Counters();
+        const bool echo = type == 8;
+        NS_TEST_ASSERT_MSG_EQ(sink.unreach, (echo && kIcmpNoRoute) ? 1u : 0u,
+                              "type " << +type << ": net unreachable messages A received");
+        if (sink.unreach) {
+            NS_TEST_ASSERT_MSG_EQ(sink.from, Ipv4Address("10.0.0.2"), "the error is R's");
+        }
+        // The guard sees the failure on every release; it has an error to stop
+        // only where ns-3 builds one.
+        NS_TEST_ASSERT_MSG_EQ(k.noRoute, 1u, "type " << +type << ": one no-route failure");
+        NS_TEST_ASSERT_MSG_EQ(k.allowed, echo ? 1u : 0u, "type " << +type << ": allowed");
+        NS_TEST_ASSERT_MSG_EQ(k.armed[IcmpErrorGuardCounters::ICMP_ERROR], echo ? 0u : 1u,
+                              "type " << +type << ": classified as an ICMP error");
+        NS_TEST_ASSERT_MSG_EQ(k.Vetoed(), (!echo && kIcmpNoRoute) ? 1u : 0u,
+                              "type " << +type << ": errors the guard stopped");
+    }
+};
+
+namespace {
+
+// A partitioned AODV network, the NS3-001 trigger in miniature: nodes 0 and 1
+// share one channel, node 2 is alone on its own, all in 10.1.1.0/24. Node 0
+// sends 100 packets/s of UDP to node 1 (delivered) and as many to node 2 (no
+// route ever): AODV's request queue fills, and on ns-3.49 each drop raises
+// an ICMP error that AODV defers into the same full queue, at one instant.
+// A sink on Ipv4L3Protocol's Drop trace stops the simulator once one
+// instant has seen 10000 route-error drops (a livelock, as simulated time
+// stands still), so the test ends either way.
+struct PartitionRun {
+    uint32_t delivered = 0;
+    bool livelock = false;
+    Time end;
+    IcmpErrorGuardCounters counters;
+};
+
+struct LivelockWatch {
+    Time at;
+    uint32_t atNow = 0;
+    bool fired = false;
+
+    void Drop(const Ipv4Header&, Ptr<const Packet>, Ipv4L3Protocol::DropReason reason,
+              Ptr<Ipv4>, uint32_t) {
+        if (reason != Ipv4L3Protocol::DROP_ROUTE_ERROR) return;
+        if (Simulator::Now() != at) {
+            at = Simulator::Now();
+            atNow = 0;
+        }
+        if (++atNow == 10000) {
+            fired = true;
+            Simulator::Stop();
+        }
+    }
+};
+
+void CountRx(uint32_t* n, Ptr<Socket> s) {
+    while (s->Recv()) ++*n;
+}
+
+void SendUdp(Ptr<Socket> s, Ipv4Address to, uint32_t left) {
+    s->SendTo(Create<Packet>(64), 0, InetSocketAddress(to, 9));
+    if (left > 1) Simulator::Schedule(MilliSeconds(10), &SendUdp, s, to, left - 1);
+}
+
+PartitionRun RunPartition(bool guarded) {
+    NodeContainer nodes;
+    nodes.Create(3);
+    SimpleNetDeviceHelper link;
+    NetDeviceContainer devs = link.Install(NodeContainer(nodes.Get(0), nodes.Get(1)));
+    devs.Add(link.Install(nodes.Get(2)));
+
+    AodvHelper aodv;
+    IcmpErrorGuardHelper guard{aodv};
+    InternetStackHelper internet;
+    if (guarded) {
+        internet.SetRoutingHelper(guard);
+    } else {
+        internet.SetRoutingHelper(aodv);
+    }
+    internet.Install(nodes);
+    Ipv4AddressHelper addresses("10.1.1.0", "255.255.255.0");
+    Ipv4InterfaceContainer ifs = addresses.Assign(devs);
+    for (uint32_t i = 0; i < nodes.GetN(); ++i) {
+        nodes.Get(i)->GetObject<aodv::RoutingProtocol>()->AssignStreams(10 * i);
+    }
+
+    LivelockWatch watch;
+    for (uint32_t i = 0; i < nodes.GetN(); ++i) {
+        nodes.Get(i)->GetObject<Ipv4L3Protocol>()->TraceConnectWithoutContext(
+            "Drop", MakeCallback(&LivelockWatch::Drop, &watch));
+    }
+    PartitionRun out;
+    Ptr<Socket> rx = Socket::CreateSocket(nodes.Get(1), UdpSocketFactory::GetTypeId());
+    rx->Bind(InetSocketAddress(Ipv4Address::GetAny(), 9));
+    rx->SetRecvCallback(MakeBoundCallback(&CountRx, &out.delivered));
+    Ptr<Socket> tx = Socket::CreateSocket(nodes.Get(0), UdpSocketFactory::GetTypeId());
+    tx->Bind();
+    for (uint32_t dst : {1u, 2u}) {
+        Simulator::ScheduleWithContext(nodes.Get(0)->GetId(), Seconds(1), &SendUdp, tx,
+                                       ifs.GetAddress(dst), 900u);
+    }
+    Simulator::Stop(Seconds(15));
+    Simulator::Run();
+    out.livelock = watch.fired;
+    out.end = Simulator::Now();
+    out.counters = guard.Counters();
+    Simulator::Destroy();
+    return out;
+}
+
+}  // namespace
+
+class AodvPartitionGuardTest : public TestCase {
+public:
+    AodvPartitionGuardTest()
+        : TestCase("icmp guard: partitioned AODV livelocks on ns-3.49 unguarded, runs guarded "
+                   "(NS3-001)") {}
+
+private:
+    void DoRun() override {
+        const PartitionRun bare = RunPartition(false);
+        const PartitionRun guarded = RunPartition(true);
+        const IcmpErrorGuardCounters& k = guarded.counters;
+        std::clog << "NS3-001 partition: unguarded "
+                  << (bare.livelock ? "livelocked" : "finished") << " at "
+                  << bare.end.GetSeconds() << " s, delivered " << bare.delivered
+                  << "; guarded finished at " << guarded.end.GetSeconds() << " s, delivered "
+                  << guarded.delivered << ", no-route " << k.noRoute << ", vetoed "
+                  << k.Vetoed() << " (source-own " << k.vetoed[IcmpErrorGuardCounters::SOURCE_OWN]
+                  << "), unmatched " << k.unmatched << '\n';
+#if defined(ROUTING_BENCH_NS3_MINOR) && ROUTING_BENCH_NS3_MINOR == 49
+        // Strict, as ns3-containers' XFAIL: if 3.49 stops livelocking, this
+        // test no longer proves the guard.
+        NS_TEST_ASSERT_MSG_EQ(bare.livelock, true, "unguarded AODV livelocks on ns-3.49");
+#elif defined(ROUTING_BENCH_NS3_MINOR) && ROUTING_BENCH_NS3_MINOR < 49
+        NS_TEST_ASSERT_MSG_EQ(bare.livelock, false, "no SendIcmpNoRoute, no livelock");
+#endif
+        // Later releases only report the unguarded run: a release with the
+        // fix stops livelocking (then retire the guard, NS3-001).
+        NS_TEST_ASSERT_MSG_EQ(guarded.livelock, false, "guarded AODV does not livelock");
+        NS_TEST_ASSERT_MSG_EQ(guarded.end, Seconds(15), "guarded AODV runs to the end");
+        NS_TEST_ASSERT_MSG_GT(guarded.delivered, 800u, "the reachable flow is delivered");
+        NS_TEST_ASSERT_MSG_GT(k.noRoute, 0u, "the unreachable flow met no-route failures");
+        NS_TEST_ASSERT_MSG_EQ(k.allowed, 0u, "!3101 sends none of them");
+        if (kIcmpNoRoute) {
+            NS_TEST_ASSERT_MSG_EQ(k.Vetoed(), k.noRoute, "each error stopped");
+            NS_TEST_ASSERT_MSG_EQ(k.unmatched, 0u, "every veto met its error");
+        } else {
+            NS_TEST_ASSERT_MSG_EQ(k.Vetoed(), 0u, "no error to stop before ns-3.49");
+        }
+    }
+};
+
 class RoutingBenchTestSuite : public TestSuite {
 public:
     RoutingBenchTestSuite() : TestSuite("routing-bench", BENCH_TEST_TYPE_UNIT) {
@@ -517,6 +788,8 @@ public:
         AddTestCase(new DefaultHooksTest, BENCH_TEST_QUICK);
         AddTestCase(new StockArmsTest, BENCH_TEST_QUICK);
         AddTestCase(new ArmIsolationTest, BENCH_TEST_QUICK);
+        AddTestCase(new IcmpNoRouteGuardTest, BENCH_TEST_QUICK);
+        AddTestCase(new AodvPartitionGuardTest, BENCH_TEST_QUICK);
     }
 };
 
