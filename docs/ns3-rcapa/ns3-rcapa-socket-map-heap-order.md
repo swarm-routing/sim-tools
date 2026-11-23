@@ -137,7 +137,22 @@ merged) showed that the order did move, the same in each of the 3 tries:
 
 Run: [probe-301](https://github.com/swarm-routing/ns3-tools/actions/runs/45084812696)
 (jobs `dsdv-ring on release|master, stock|order`); the same locally in
-`ns3-dev:latest-debug` (`sha256:10b2dfad…`, ns-3.49).
+`ns3-dev:latest-debug` (ns-3.49), with this command (the AODV command above
+stays at `bb2951e`, whose suite has no `dsdv-ring`):
+
+```bash
+git clone https://github.com/swarm-routing/ns3-tools && cd ns3-tools
+git fetch origin afc1aa00d8ddd3836024d490a44a12cb85f567d5
+git checkout afc1aa00d8ddd3836024d490a44a12cb85f567d5
+docker run --rm -v "$PWD:/src:ro" \
+    ghcr.io/swarm-routing/ns3-dev@sha256:10b2dfad3a936be95a14f59a33348de4bfebe798a77a7d6f2ceeb4bc2980a349 \
+    ns3-build-contrib --test routing-bench=/src/ns3/routing-bench
+```
+
+(The commit is the one that added `dsdv-ring`, swarm-routing/ns3-tools#306's
+head; the digest is `latest-debug` = `3.49-debug` as used for the local runs.
+The minimal program is
+[`routing-bench-test-suite.cc` at that commit](https://github.com/swarm-routing/ns3-tools/blob/afc1aa00d8ddd3836024d490a44a12cb85f567d5/ns3/routing-bench/test/routing-bench-test-suite.cc).)
 
 ## Root cause: five whys
 
