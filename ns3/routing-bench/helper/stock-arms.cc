@@ -5,8 +5,10 @@
 
 #include "ns3/abort.h"
 #include "ns3/aodv-helper.h"
+#include "ns3/aodv-routing-protocol.h"
 #include "ns3/dsdv-helper.h"
 #include "ns3/dsdv-routing-protocol.h"
+#include "ns3/icmp-error-guard-helper.h"
 #include "ns3/ipv4-list-routing-helper.h"
 #include "ns3/ipv4-static-routing-helper.h"
 #include "ns3/ipv4.h"
@@ -30,14 +32,27 @@ namespace ns3 {
 namespace bench {
 namespace {
 
+// NS3-001 (#238): stock AODV behind the ICMP no-route guard, which applies
+// nsnam/ns-3-dev!3101's suppression rules, so ns-3.49's SendIcmpNoRoute cannot
+// livelock it (nsnam/ns-3-dev#1408); on 3.48 and earlier the guard has nothing
+// to stop and the rows are byte-identical to unguarded AODV.
 class AodvArm : public Arm {
 public:
     std::string Name() const override { return "aodv"; }
     void InstallRouting(InternetStackHelper& internet, RunContext&) override {
-        internet.SetRoutingHelper(m_aodv);
+        internet.SetRoutingHelper(m_guard);
     }
+    // What AodvHelper::AssignStreams does, in the same node order with the
+    // same numbering; it casts Ipv4::GetRoutingProtocol(), which is now the
+    // guard, so reach AODV through the node it is aggregated to.
     int64_t AssignStreams(RunContext& run, int64_t stream) override {
-        return m_aodv.AssignStreams(run.nodes, stream);
+        int64_t used = 0;
+        for (auto it = run.nodes.Begin(); it != run.nodes.End(); ++it) {
+            Ptr<aodv::RoutingProtocol> aodv = (*it)->GetObject<aodv::RoutingProtocol>();
+            NS_ABORT_MSG_IF(!aodv, "expected aodv::RoutingProtocol on this node (NS3-001 guard)");
+            used += aodv->AssignStreams(stream + used);
+        }
+        return used;
     }
     // #229: pending-queue conservation, UDP only (the SeqTs key does not
     // exist under TCP).
@@ -46,7 +61,7 @@ public:
     }
 
 private:
-    AodvHelper m_aodv;
+    IcmpErrorGuardHelper m_guard{AodvHelper()};
 };
 
 // #510: OLSR behind a list router whose fallback counts the origin's refused
@@ -212,7 +227,9 @@ Ptr<Arm> MakeHwmpArm() { return Create<HwmpArm>(); }
 }  // namespace
 
 void RegisterStockArms() {
-    RegisterArm("aodv", "AODV (stock ns-3)", &MakeAodvArm);
+    RegisterArm("aodv",
+                "AODV (stock ns-3; ICMP no-route guard per nsnam/ns-3-dev!3101, NS3-001)",
+                &MakeAodvArm);
     RegisterArm("olsr", "OLSR (stock ns-3), source refusals counted (#510)", &MakeOlsrArm);
     RegisterArm("dsdv", "DSDV (stock ns-3)", &MakeDsdvArm);
     RegisterArm("hwmp", "802.11s HWMP path selection (stock ns-3 mesh, #708)", &MakeHwmpArm);
