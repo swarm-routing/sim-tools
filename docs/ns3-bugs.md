@@ -11,7 +11,9 @@ This page is the index only. Each bug has an **RCAPA** (root cause analysis
 with corrective and preventive actions) in [`ns3-rcapa/`](ns3-rcapa/README.md)
 and an **RCAPA ticket**, an issue titled `[rcapa] NS3-NNN …` in this
 repository. The detail (reproduction, five whys, diagrams, source excerpts,
-actions, the upstream text, the timeline) is in the RCAPA, not here.
+actions, the upstream text, the timeline) is in the RCAPA, not here. The
+one exception: a bug already fixed in the release ns-3 supports is only
+recorded, under ["Fixed upstream before we recorded them"](#fixed-upstream-before-we-recorded-them).
 
 A regression in a published release of ns3-tools' own code is not an ns-3
 bug: it is an `NST-NNN` RCAPA, in [`rcapa/README.md`](rcapa/README.md).
@@ -30,7 +32,7 @@ fix). A bug usually has several.
 
 | ID | Title | ns-3 versions | Modules | Status | Workaround in our repositories | Upstream | Investigation and fixes | RCAPA |
 |----|-------|---------------|---------|--------|--------------------------------|----------|-------------------------|-------|
-| NS3-001 | AODV livelocks in a zero-time ICMP "net unreachable" storm | 3.49 and ns-3-dev `master` `8ec9b4a1` (run); not 3.48 | internet (`Ipv4L3Protocol::SendIcmpNoRoute`, `Icmpv4L4Protocol`), aodv | open upstream; draft ready; worked around | AODV-family arms on `ns3-dev:3.48` (ns3-tools `ns3.yml`; AntHocNet CI); strict XFAIL `3.49 sparse-aodv` in swarm-routing/ns3-containers `test/known-failures.txt` | not yet reported (draft: [swarm-routing/ns3-containers#55](https://github.com/swarm-routing/ns3-containers/issues/55)) | [swarm-routing/ns3-tools#238](https://github.com/swarm-routing/ns3-tools/issues/238), [swarm-routing/ns3-containers#35](https://github.com/swarm-routing/ns3-containers/issues/35), [swarm-routing/ns3-containers#42](https://github.com/swarm-routing/ns3-containers/issues/42), [swarm-routing/ns3-containers#48](https://github.com/swarm-routing/ns3-containers/pull/48), [swarm-routing/AntHocNet#843](https://github.com/swarm-routing/AntHocNet/issues/843), [swarm-routing/AntHocNet#842](https://github.com/swarm-routing/AntHocNet/pull/842), [swarm-routing/AntHocNet#656](https://github.com/swarm-routing/AntHocNet/issues/656) | [aodv-icmp-livelock](ns3-rcapa/ns3-rcapa-aodv-icmp-livelock.md) |
+| NS3-001 | AODV livelocks in a zero-time ICMP "net unreachable" storm | 3.49 and ns-3-dev `master` `8ec9b4a1` (run); not 3.48 | internet (`Ipv4L3Protocol::SendIcmpNoRoute`, `Icmpv4L4Protocol`), aodv | open upstream; reported, fix proposed (not ours); worked around | AODV-family arms on `ns3-dev:3.48` (AntHocNet CI) until the harness guard reaches them: `routing-bench` wraps the `aodv` arm in a guard ([swarm-routing/sim-tools#322](https://github.com/swarm-routing/sim-tools/pull/322)) applying [nsnam/ns-3-dev!3101](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3101)'s rules (maintainer decision 2026-11-23, swarm-routing/sim-tools#238); strict XFAIL `3.49 sparse-aodv` in swarm-routing/ns3-containers `test/known-failures.txt` | [nsnam/ns-3-dev#1408](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1408) (filed 2026-11-18 through swarm-routing/ns3-upstream-report; text: [swarm-routing/ns3-containers#55](https://github.com/swarm-routing/ns3-containers/issues/55)), fix [nsnam/ns-3-dev!3101](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3101) (open, not ours) | [swarm-routing/ns3-tools#238](https://github.com/swarm-routing/ns3-tools/issues/238), [swarm-routing/ns3-containers#35](https://github.com/swarm-routing/ns3-containers/issues/35), [swarm-routing/ns3-containers#42](https://github.com/swarm-routing/ns3-containers/issues/42), [swarm-routing/ns3-containers#48](https://github.com/swarm-routing/ns3-containers/pull/48), [swarm-routing/AntHocNet#843](https://github.com/swarm-routing/AntHocNet/issues/843), [swarm-routing/AntHocNet#842](https://github.com/swarm-routing/AntHocNet/pull/842), [swarm-routing/AntHocNet#656](https://github.com/swarm-routing/AntHocNet/issues/656) | [aodv-icmp-livelock](ns3-rcapa/ns3-rcapa-aodv-icmp-livelock.md) |
 | NS3-002 | AODV and DSDV order per-interface sockets by heap address | 3.42, 3.48, 3.49 and ns-3-dev `master` `8ec9b4a1`, `a150de8f` (run); 3.42, 3.48, 3.49 (read) | aodv, dsdv (`std::map` keyed by `Ptr<Socket>`; AODV's rows move with it, DSDV's send order does but its rows did not on the topology tried, swarm-routing/ns3-tools#301; DSDV's `NotifyRemoveAddress()` leaves its socket unbound, so the fix keys by interface index) | open upstream; reported; worked around | `--isolateArms` (default since v1.1.0); AntHocNet: its own maps ordered, stock `aodv` in its own process, the order gate on `anthocnet` rows only | [nsnam/ns-3-dev#1409](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1409) (filed 2026-11-19; a volunteer writes the fix; text: [swarm-routing/ns3-tools#206](https://github.com/swarm-routing/ns3-tools/issues/206)) | [swarm-routing/ns3-tools#239](https://github.com/swarm-routing/ns3-tools/issues/239), [swarm-routing/ns3-tools#301](https://github.com/swarm-routing/ns3-tools/issues/301), [swarm-routing/ns3-tools#198](https://github.com/swarm-routing/ns3-tools/issues/198), [swarm-routing/ns3-tools#202](https://github.com/swarm-routing/ns3-tools/pull/202), [swarm-routing/ns3-tools#212](https://github.com/swarm-routing/ns3-tools/pull/212), [swarm-routing/AntHocNet#362](https://github.com/swarm-routing/AntHocNet/issues/362), [swarm-routing/AntHocNet#471](https://github.com/swarm-routing/AntHocNet/pull/471), [swarm-routing/AntHocNet#675](https://github.com/swarm-routing/AntHocNet/issues/675), [swarm-routing/AntHocNet#1039](https://github.com/swarm-routing/AntHocNet/issues/1039), [swarm-routing/AntHocNet#1059](https://github.com/swarm-routing/AntHocNet/pull/1059) | [socket-map-heap-order](ns3-rcapa/ns3-rcapa-socket-map-heap-order.md) |
 | NS3-003 | DSDV sends on a route with a null output device (assert, or a silent SIGSEGV when optimized) | 3.36–3.48 and ns-3-dev 2026-08 (run); 3.49 (read) | dsdv (fault seen in internet's `Ipv4L3Protocol::SendRealOut`) | open upstream; reported, fix proposed; worked around | AntHocNet's `isl-grid` refuses `dsdv` on multi-interface topologies, checked by its satellite arm smoke | [nsnam/ns-3-dev#1364](https://gitlab.com/nsnam/ns-3-dev/-/issues/1364), MR [nsnam/ns-3-dev!2985](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/2985) (open; stalled since 2026-09-16: `need_rebase`, no reviewer; the alternative [nsnam/ns-3-dev!3011](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3011) defers to it; see PROC-001) | [swarm-routing/ns3-tools#240](https://github.com/swarm-routing/ns3-tools/issues/240), [swarm-routing/AntHocNet#281](https://github.com/swarm-routing/AntHocNet/issues/281), [swarm-routing/AntHocNet#420](https://github.com/swarm-routing/AntHocNet/issues/420), [swarm-routing/AntHocNet#422](https://github.com/swarm-routing/AntHocNet/pull/422), [swarm-routing/AntHocNet#434](https://github.com/swarm-routing/AntHocNet/issues/434), [swarm-routing/AntHocNet#445](https://github.com/swarm-routing/AntHocNet/pull/445), [swarm-routing/ns3-tools#247](https://github.com/swarm-routing/ns3-tools/issues/247) | [dsdv-null-route](ns3-rcapa/ns3-rcapa-dsdv-null-route.md) |
 
@@ -42,8 +44,23 @@ RCAPA ticket and an RCAPA.
 
 | Finding | ns-3 | Where | Open question |
 |---------|------|-------|---------------|
-| Four wifi unit suites (`wifi-txop`, `wifi-mlo`, `wifi-gcr`, `wifi-emlsr-basic-exchanges`) fail with the images' 16-module set; pass with all modules, and on 3.49 | 3.48 | [swarm-routing/ns3-containers#49](https://github.com/swarm-routing/ns3-containers/issues/49) | an undeclared module dependency (ns-3's) or the image's module list; the test also reads past its frame list (an `EXPECT` where an `ASSERT` is needed) |
 | 3.42 → 3.48 moves AntHocNet's delay tail and overhead (same build recipe, different release) | 3.42 → 3.48 | [swarm-routing/AntHocNet#923](https://github.com/swarm-routing/AntHocNet/issues/923) | an intended upstream change or a regression; bisect pending |
+
+## Fixed upstream before we recorded them
+
+Upstream ns-3 bugs found on an older release whose fix is already in the
+release ns-3 supports (the images' `latest`), so nothing is left to report or
+fix upstream. They are recorded here for traceability, with the strict
+expected failures that keep on-demand builds of those older releases green,
+and get no `NS3-NNN`, RCAPA ticket, RCAPA or upstream report (maintainer
+decision 2026-11-23). A pinned older release can still carry one: the
+"Workaround" column says where, and a result produced on that release is
+checked against it.
+
+| Bug | ns-3 | Fixed in | Upstream | Where found | Workaround in our repositories |
+|-----|------|----------|----------|-------------|--------------------------------|
+| 802.11b HR/DSSS (5.5, 11 Mb/s) frames dropped as an unsupported modulation: `GetModulationClassForStandard(WIFI_STANDARD_80211b)` returns `WIFI_MOD_CLASS_DSSS`, and since 3.41 `WifiPhy::StartReceivePreamble` refuses any class above it | 3.42 (run); 3.41, 3.42 (read); not 3.40 or earlier (no gate, read) | 3.43 (`da9fcebe`) | [nsnam/ns-3-dev#1095](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1095) | [swarm-routing/sim-containers#44](https://github.com/swarm-routing/sim-containers/issues/44) | strict XFAIL `3.41`/`3.42` `dsdv-manet`, `dense-{aodv,olsr,dsdv}` (`no-packets-delivered`) in swarm-routing/sim-containers `test/known-failures.txt` ([swarm-routing/sim-containers#250](https://github.com/swarm-routing/sim-containers/pull/250)); [swarm-routing/AntHocNet#923](https://github.com/swarm-routing/AntHocNet/issues/923) to check for 802.11b above 2 Mb/s on 3.42 |
+| Four wifi unit suites (`wifi-txop`, `wifi-mlo`, `wifi-gcr`, `wifi-emlsr-basic-exchanges`) fail when `test-runner` is built without the `test` module: the tests match frames by packet UID, which needs packet metadata on, and 3.48 turns it on only through `src/test`'s `ns3tcp` suites (a test bug; `wifi-txop` then reads past its frame list) | 3.48 (run) | 3.49 (the tests use the MPDU's own UID) | none | [swarm-routing/sim-containers#49](https://github.com/swarm-routing/sim-containers/issues/49) ([root cause](https://github.com/swarm-routing/sim-containers/issues/49#issuecomment-7110484932)) | strict XFAIL `3.48 unit:<suite>` in swarm-routing/sim-containers `test/known-failures.txt` |
 
 ## Process RCAPAs (ours)
 
@@ -87,7 +104,11 @@ Listed for traceability, because they were found next to the bugs above:
 ## Adding a bug
 
 Anyone who finds or suspects a defect in upstream ns-3 (a session or a
-contributor):
+contributor) follows the steps below, unless the defect is already fixed in
+the release ns-3 supports (the images' `latest`): then it gets a row under
+["Fixed upstream before we recorded them"](#fixed-upstream-before-we-recorded-them)
+and the expected failures that keep older builds green, nothing more
+(maintainer decision 2026-11-23).
 
 1. **Open the RCAPA ticket first**: an issue in this repository titled
    `[rcapa] NS3-NNN <short description>`, with the next free number (numbers are
