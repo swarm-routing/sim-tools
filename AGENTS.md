@@ -53,15 +53,20 @@ same locally:
 ```bash
 docker run --rm -v "$PWD:/src:ro" ghcr.io/swarm-routing/ns3-dev:latest-debug bash -c \
     'ns3-build-contrib --strict-warnings --test routing-bench=/src/ns3/routing-bench &&
-     bash /src/tools/checks/check-stock-arms.sh /opt/ns-3 "olsr dsdv hwmp"'
+     bash /src/tools/checks/check-stock-arms.sh /opt/ns-3 "aodv olsr dsdv hwmp"'
 ```
 
 The module is named `routing-bench`, as in AntHocNet: every arm module that
 ships `helper/<module>-bench-arms.cc` keeps registering against it. CI
 (`.github/workflows/ns3.yml`) also checks that each stock arm delivers.
-**Temporary exception (ns3-containers#35, `docs/ns3-bugs.md` NS3-001, option A):** ns-3.49's stock AODV
-livelocks, so the `aodv` arm's check runs on `ns3-dev:3.48`; move it back to
-`latest` when a fixed ns-3 release reaches it. C++ formatting is not checked
+**NS3-001 (#238):** ns-3.49's stock AODV livelocks, so the `aodv` arm installs
+AODV behind the ICMP no-route guard (`model/icmp-error-guard-routing.h`,
+`helper/icmp-error-guard-helper.h`: [nsnam/ns-3-dev!3101](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3101)'s suppression rules,
+generic over any routing helper; maintainer decision 2026-11-23, the images
+stay stock) and its check runs on `latest` with the others; the 3.48-only leg
+of option A is gone. Retire the guard once an ns-3 release with the fix is
+`latest` (the suite's NS3-001 test then reports that unguarded AODV no longer
+livelocks). C++ formatting is not checked
 yet, in CI (`format: false` in `ns3.yml`) or by `make`: the harness keeps
 AntHocNet's style until a restyle PR adopts the org `.clang-format` and adds
 clang-format back to `make lint` and `make format`. Never run clang-format on

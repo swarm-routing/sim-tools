@@ -25,11 +25,13 @@ it depends on none of them.
 | `model/arm-isolation.h/.cc` | `--isolateArms` (default on, ns3-tools#198): every arm runs in its own worker process, forked from one zygote made before the harness allocates anything; not part of the API |
 | `model/urban-obstacle-loss-model.h/.cc` | the urban building-shadowing channel (#488, #580), Sommer et al.'s obstacle model |
 | `model/source-refusal-counter.h/.cc` | the #510 fallback that counts the sends OLSR refuses at the source |
-| `helper/stock-arms.h/.cc` | `RegisterStockArms()`: `aodv`, `olsr`, `dsdv` and `hwmp` (with its 802.11s devices) |
+| `model/icmp-error-guard-routing.h/.cc` | the ICMP no-route guard (NS3-001): a decorator around any `Ipv4RoutingProtocol` that applies nsnam/ns-3-dev!3101's suppression rules |
+| `helper/icmp-error-guard-helper.h/.cc` | `IcmpErrorGuardHelper`: wraps whatever another `Ipv4RoutingHelper` creates in the guard, and sums its counters |
+| `helper/stock-arms.h/.cc` | `RegisterStockArms()`: `aodv` (behind the ICMP no-route guard), `olsr`, `dsdv` and `hwmp` (with its 802.11s devices) |
 | `examples/routing-compare.cc` | the program |
 | `examples/anthocnet-compare.cc` | the same program under its original name (ADR-0027 §4), kept at least through v3.x |
 | `examples/CMakeLists.txt` | finds the arm modules installed beside it and generates `arms-generated.cc` (#768) |
-| `test/routing-bench-test-suite.cc` | registry rules, the stock arms, and that every stock arm's rows are the same alone and after other arms and a reshaped heap (`./test.py -s routing-bench`) |
+| `test/routing-bench-test-suite.cc` | registry rules, the stock arms, that every stock arm's rows are the same alone and after other arms and a reshaped heap, and the ICMP no-route guard (nsnam/ns-3-dev!3101's test; a partitioned AODV network that livelocks on ns-3.49 unguarded and runs guarded) (`./test.py -s routing-bench`) |
 
 The other arms live in their own modules, each in one
 `helper/<module>-bench-arms.cc`: `anthocnet`, `aomdv`, `gpsr` (`gpsr`, `gpcr`,
@@ -60,6 +62,30 @@ isolation removes the dependence on other arms, not on the arm's own
 allocations, nor on the state `RunHarness` is entered with: a program calls it
 first thing from `main()`, as `routing-compare` does, and the test suite forks
 every harness run from one prepared state (ns3-tools#211).
+
+## The `aodv` arm and ns-3.49 (NS3-001)
+
+ns-3.49's new `Ipv4L3Protocol::SendIcmpNoRoute` answers every no-route
+failure of a forwarding node with an ICMP Destination Unreachable, ICMP errors
+and the node's own packets included. Stock AODV defers that error, which has
+no route either, through loopback into its full request queue, whose drop
+raises the next one: a zero-time livelock, and the run never ends
+([`docs/ns3-rcapa/ns3-rcapa-aodv-icmp-livelock.md`](../../docs/ns3-rcapa/ns3-rcapa-aodv-icmp-livelock.md),
+[nsnam/ns-3-dev#1408](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1408)).
+The images stay stock ns-3 (maintainer decision 2026-11-23), so the harness
+carries the fix instead: the `aodv` arm installs AODV behind
+`IcmpErrorGuardHelper`, which stops exactly the errors the proposed upstream
+fix ([nsnam/ns-3-dev!3101](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3101))
+suppresses (destination not unicast, non-initial fragment, source not a host,
+source one of the node's own addresses, ICMP error), so ns-3.49 with the guard
+behaves as a release with the fix. The guard forwards everything else to
+AODV and draws no random number; AODV's streams are assigned through the
+object aggregated to each node, in `AodvHelper::AssignStreams`'s order, so on
+ns-3.48 and earlier (no `SendIcmpNoRoute`, nothing to stop) the rows are
+byte-identical to unguarded AODV. On ns-3.49 a run that did finish can still
+move: the errors !3101 suppresses are no longer sent. The guard is generic
+over any `Ipv4RoutingHelper`; an AODV-derived arm in another module can wrap
+its own helper the same way.
 
 ## Registering an arm
 

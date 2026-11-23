@@ -6,13 +6,13 @@
 |---|---|
 | ID | NS3-001 |
 | RCAPA ticket | [swarm-routing/ns3-tools#238](https://github.com/swarm-routing/ns3-tools/issues/238) |
-| Status | open upstream; draft ready, not yet reported; worked around (3.48 pin) |
+| Status | open upstream (reported, fix proposed, not merged); worked around: the routing-bench `aodv` arm runs behind a harness guard applying the proposed fix's rules ([swarm-routing/sim-tools#322](https://github.com/swarm-routing/sim-tools/pull/322)), AntHocNet still on the 3.48 pin until its `ns3-tools.lock` bump |
 | Found | 2026-10-15 on ns-3-dev ([swarm-routing/AntHocNet#656](https://github.com/swarm-routing/AntHocNet/issues/656)); 2026-11-01 on ns-3.49 ([swarm-routing/AntHocNet#843](https://github.com/swarm-routing/AntHocNet/issues/843), [swarm-routing/ns3-containers#35](https://github.com/swarm-routing/ns3-containers/issues/35)) |
 | Last checked | 2026-11-16: reproduced on ns-3-dev `master` `8ec9b4a1` ([comment](https://github.com/swarm-routing/ns3-containers/issues/55#issuecomment-6904704191)); ns-3.49 and ns-3.48 sources read at their tags for this page; nsnam GitLab searched for `SendIcmpNoRoute` (no issue) |
 | ns-3 versions | run: 3.49 (hangs), 3.48 (finishes), ns-3-dev `230ea2a3` of 2026-10-08 (hangs), ns-3-dev `master` `8ec9b4a190b52dadb5a3c35572dec687e1b75379` of 2026-11-11 (hangs, run 2026-11-16); not affected: 3.48 and earlier (no `SendIcmpNoRoute`) |
 | Modules | `internet` (`Ipv4L3Protocol`, `Icmpv4L4Protocol`, `LoopbackNetDevice`), `aodv` (`RoutingProtocol`, `RequestQueue`) |
 | Impact on our repositories | on 3.49, a run of stock `aodv` or an AODV-derived arm (AntHocNet's vendored `aomdv`) never finishes once AODV's request queue drops a packet, which needs the network to stay partitioned long enough (a short run can finish first: `--time=5` does). Affected: ns3-tools' `aodv` arm check, AntHocNet's gates, package checks, kits and campaigns, ARA's and BeeAdHoc's AODV comparisons. Protocols that do not use AODV are unaffected. |
-| Upstream | not yet reported; draft in [swarm-routing/ns3-containers#55](https://github.com/swarm-routing/ns3-containers/issues/55) |
+| Upstream | reported 2026-11-18 as [nsnam/ns-3-dev#1408](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1408) (open; draft was [swarm-routing/ns3-containers#55](https://github.com/swarm-routing/ns3-containers/issues/55)); fix proposed in [nsnam/ns-3-dev!3101](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3101) (open, not ours; checked 2026-11-23) |
 
 ns-3.49 answers every routing failure of a forwarding node with an ICMP
 Destination Unreachable, including AODV's request-queue drops. In a partitioned
@@ -340,9 +340,17 @@ documented, temporary exception to the rule that CI follows `latest`. No gate
 is skipped or loosened. Option C (patching ns-3 inside the images) was
 rejected: the images stay stock ns-3.
 
+Maintainer decision 2026-11-23: fix it in the harness, not in the images
+(they stay stock ns-3). The guard applies exactly
+[nsnam/ns-3-dev!3101](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3101)'s
+suppression rules, so ns-3.49 with the guard behaves like a release with the
+fix; it supersedes option A's 3.48 pin here, and AntHocNet takes it through
+its `ns3-tools.lock` bump.
+
 | Action | Where | Status |
 |--------|-------|--------|
-| The `aodv` arm's delivery check runs on `ns3-dev:3.48`; the other stock arms on `latest` | ns3-tools `.github/workflows/ns3.yml` (`stock-arms`), `AGENTS.md` "Build & verify" | done; revert when fixed |
+| Harness guard: the `aodv` arm installs stock AODV behind `IcmpErrorGuardHelper`, an `Ipv4RoutingProtocol` decorator (generic over any routing helper) that vetoes exactly the no-route ICMP errors [nsnam/ns-3-dev!3101](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3101) suppresses; AODV's streams assigned in `AodvHelper::AssignStreams`'s order, so 3.48 output is byte-identical. Tests in the `routing-bench` suite: [nsnam/ns-3-dev!3101](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3101)'s own no-route test with the router guarded, and a partitioned AODV network that livelocks unguarded on 3.49 (strict) and runs and delivers guarded | ns3-tools `ns3/routing-bench/` (`model/icmp-error-guard-routing.*`, `helper/icmp-error-guard-helper.*`, `helper/stock-arms.cc`; [swarm-routing/sim-tools#322](https://github.com/swarm-routing/sim-tools/pull/322), part of [swarm-routing/sim-tools#238](https://github.com/swarm-routing/sim-tools/issues/238)) | done ([swarm-routing/sim-tools#322](https://github.com/swarm-routing/sim-tools/pull/322)); retire when a fixed release is `latest` |
+| The `aodv` arm's delivery check runs on `latest` with the other stock arms (option A's `ns3-dev:3.48` leg dropped) | ns3-tools `.github/workflows/ns3.yml` (`stock-arms`), `AGENTS.md` "Build & verify" | done ([swarm-routing/sim-tools#322](https://github.com/swarm-routing/sim-tools/pull/322)); was the 3.48 leg since 2026-11-02 |
 | Gates, package checks, kits, campaign images and release checks on `ns3-dev:3.48` | swarm-routing/AntHocNet `ci.yml`, `ci-ns3.yml`, `ci-web.yml`, `release.yml`, `campaign-image.yml`, `benchmarks.yml` ([swarm-routing/AntHocNet#842](https://github.com/swarm-routing/AntHocNet/pull/842)) | done; revert when fixed |
 | README "Known issues and findings" entry for 3.49 | swarm-routing/ns3-containers README | done |
 

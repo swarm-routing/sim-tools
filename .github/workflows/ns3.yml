@@ -6,11 +6,11 @@ name: ns-3
 # ghcr.io/swarm-routing/ns3-dev: build + test.py on the release ns-3 supports
 # (`latest`, debug and sanitized), then the stock arms must each deliver.
 #
-# TEMPORARY EXCEPTION (ns3-containers#35, AntHocNet#843, docs/ns3-bugs.md
-# NS3-001, option A): on
-# ns-3.49 stock AODV livelocks, so the aodv arm's delivery check runs on
-# ns3-dev:3.48 until the first ns-3 release with the fix reaches `latest`;
-# then move `aodv` into the latest leg and drop the 3.48 one.
+# The aodv arm runs on `latest` with the rest: on ns-3.49 stock AODV livelocks
+# (docs/ns3-bugs.md NS3-001, #238), so the arm installs it behind the ICMP
+# no-route guard (nsnam/ns-3-dev!3101's rules; maintainer decision 2026-11-23:
+# fix it in the harness, the images stay stock). It replaced the 3.48-only
+# leg of option A. The suite's NS3-001 tests prove the guard on each image.
 #
 # The Python quality job (ruff + coverage.py over python/tests) runs here too,
 # not in python.yml: SonarQube Cloud keeps one analysis per branch, so the one
@@ -167,9 +167,7 @@ jobs:
       matrix:
         include:
           - version: latest
-            arms: olsr dsdv hwmp
-          - version: '3.48'  # aodv: 'latest' once ns3-containers#35 is fixed
-            arms: aodv
+            arms: aodv olsr dsdv hwmp
     # No Harden-Runner here (swarm-routing/.github#164): a job that runs entirely
     # in a container cannot take it on a GitHub-hosted runner (it needs sudo on the VM).
     steps:
