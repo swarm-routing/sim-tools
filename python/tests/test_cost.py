@@ -12,6 +12,9 @@
 3. The samples: ##PERF## rows joined to their ##CONFIG##, their id from
    ##PROV##; the store deduplicates and stays bounded; the seed table comes
    from a benchmarks checkout whose files match their manifest.
+4. The cost under the verdicts (#91): per arm, CPU s per simulated s and
+   events/s as median [min..max]; '-' for a value a row cannot give; no line
+   at all without a per-arm ##PERF## row.
 
 Run: python3 test_cost.py   (no pytest; exits non-zero on the first failure)
 """
@@ -193,9 +196,50 @@ def test_seed():
         check(cost.seed_samples(os.path.join(d, "empty")) == [], "seed: no runs/, nothing")
 
 
+def test_verdict_cost():
+    """#91: per-arm cost under the verdicts, descriptive, nothing without ##PERF##."""
+    got = cost.arm_cost(CELL, ["olsr", "aodv", "dsdv"])
+    check(
+        list(got) == ["olsr", "aodv"], f"verdict cost: the asked arms with rows, in order ({got})"
+    )
+    n, cpu, eps = got["aodv"]
+    # cpu_s / time: 1.0/300, 1.1/300; events / wall: 5000/1.3, 5000/1.2
+    check(
+        (n, cpu, eps) == (2, "0.0035 [0.003333..0.003667]", "4006 [3846..4167]"),
+        f"verdict cost: median [min..max] of cpu_s/sim_s and events/s ({got['aodv']})",
+    )
+    check(
+        got["olsr"] == (1, "0.006667 [0.006667..0.006667]", "3600 [3600..3600]"),
+        "verdict cost: one seed",
+    )
+    noisy = "##CONFIG## scenario=paper nNodes=50 runs=1\n##PERF## paper aodv 1 - 1.000 - -\n"
+    check(
+        cost.arm_cost(noisy, ["aodv"]) == {"aodv": (1, "-", "-")},
+        "verdict cost: no time or cpu, '-'",
+    )
+    lines = cost.verdict_cost_lines(["cell", "arm"], [(["c1"], CELL, ["aodv"])])
+    check(
+        lines
+        == [
+            "cost\tcell\tarm\tn\tcpu_s/sim_s median [min..max]\tevents/s median [min..max]\t"
+            + cost.VERDICT_NOTE,
+            "cost\tc1\taodv\t2\t0.0035 [0.003333..0.003667]\t4006 [3846..4167]",
+        ],
+        f"verdict cost: one header, one row per cell and arm ({lines})",
+    )
+    bare = "##CONFIG## scenario=paper nNodes=50 time=300\n##RUN## 1 aodv 80.0 1 1 1 1 1 1 1 1\n"
+    old = "##PERF## paper-mobile all 512.3 734212\n"
+    check(
+        cost.verdict_cost_lines(["cell", "arm"], [(["c"], bare, ["aodv"]), (["d"], old, ["aodv"])])
+        == [],
+        "verdict cost: no per-arm ##PERF## row (none, or AntHocNet's 'all'), no line at all",
+    )
+
+
 if __name__ == "__main__":
     test_fit()
     test_estimate()
     test_samples()
     test_seed()
+    test_verdict_cost()
     print("test_cost: all ok")

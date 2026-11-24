@@ -130,6 +130,19 @@ reused and, before sending any, refuses one over the budget or unknown,
 printing the breakdown, unless `--yes-over-budget` is given. Without a
 budget there is no guard. Cells found reusable during that same `dispatch`
 are not subtracted: the guard reads an upper bound.
+
+Per-arm cost under the verdicts (#91): after every verdict line, `verdicts`
+prints on stderr, per cell and arm with ##PERF## rows, CPU seconds per
+simulated second (cpu_s over the ##CONFIG## time=) and events per wall
+second, each as median [min..max] across the cell's seeds:
+
+    cost  cell  arm  n  cpu_s/sim_s median [min..max]  events/s median [min..max]  (##PERF##: ...)
+    cost  static-mesh  anthocnet  20  0.0123 [0.0119..0.0131]  1.52e+05 [1.47e+05..1.6e+05]
+
+Descriptive, unpaired and noisy (they depend on the runner): never a verdict,
+never in the exit code, and on stderr so the verdict record on stdout stays
+byte-identical whether a cell was reused or re-run. Without ##PERF## rows
+nothing is printed.
 """
 
 import argparse
@@ -1211,22 +1224,30 @@ def cmd_collect(plan, a):
 
 def cmd_verdicts(plan, a):
     ref = plan["reference"]
+    texts = []  # (labels, text, arms) for the cost lines (#91)
     for cell in plan["cells"]:
         path = os.path.join(a.dir, "cells", f"{cell}.txt")
         if not os.path.exists(path):
             print(f"{cell}\t-\t(missing {path})")
             continue
         with open(path) as f:
+            text = f.read()
             try:  # strict (#58): no verdict from a cell with a malformed ##RUN## field
-                runs = bench_parse.parse_runs(f.read(), bench_parse.Reader(where=path))
+                runs = bench_parse.parse_runs(text, bench_parse.Reader(where=path))
             except bench_parse.Malformed as e:
                 sys.exit(f"verdicts: {e}")
+        texts.append(([cell], text, plan["arms"]))
         for arm in plan["arms"]:
             if arm == ref:
                 continue
             ps = bench_parse.paired_stats(runs.get(ref, {}), runs.get(arm, {}))
             line = bench_parse.fmt_paired(ps) if ps else "(no paired ##RUN## rows)"
             print(f"{cell}\t{arm} - {ref}\t{line}")
+    # Per-arm cost, descriptive and noisy: stderr, after every verdict, so the
+    # verdict record (stdout) stays byte-identical reused or re-run (#91).
+    sys.stdout.flush()
+    for line in cost.verdict_cost_lines(["cell", "arm"], texts):
+        print(line, file=sys.stderr)
 
 
 COMMANDS = {
