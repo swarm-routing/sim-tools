@@ -25,7 +25,10 @@ upper bound, and with no fitted arm at all there is no number.
     python3 cost.py seed BENCHMARKS     # samples of runs/*/cells/*.txt, as JSON lines
 
 Statistics stay scripted (org rule 13): this is the only place a cost is
-estimated, and ##PERF## never feeds a verdict.
+estimated, and ##PERF## never feeds a verdict. `ns3-campaign verdicts` prints
+each arm's CPU s per simulated s and events/s per cell on stderr after its
+verdicts (verdict_cost_lines, ns3-tools#91): median and min..max across the
+seeds, descriptive and unpaired, and nothing at all without ##PERF## rows.
 """
 
 import argparse
@@ -34,6 +37,7 @@ import json
 import math
 import os
 import re
+import statistics
 import sys
 
 try:  # as the ns3_tool package, or as a script beside its siblings
@@ -106,6 +110,7 @@ def samples_of_text(text, profile="optimized", program=None, source=None):
                     "seed": p["seed"],
                     "wall_s": p["wall_s"],
                     "cpu_s": p["cpu_s"],
+                    "events": p["events"],
                 }
             )
     return out
@@ -118,6 +123,55 @@ def overhead_sample(run_id, seconds, text):
     if over < 0:
         return None
     return {"kind": "overhead", "id": f"run:{run_id}", "seconds": round(over, 3)}
+
+
+# --- per-arm cost under the verdicts (ns3-tools#91) ---------------------------
+
+VERDICT_NOTE = "(##PERF##: descriptive, unpaired, noisy; never a verdict or a gate)"
+
+
+def _spread(xs):
+    """'median [min..max]' of the values, '-' with none."""
+    xs = sorted(xs)
+    if not xs:
+        return "-"
+    return f"{statistics.median(xs):.4g} [{xs[0]:.4g}..{xs[-1]:.4g}]"
+
+
+def arm_cost(text, arms):
+    """{arm: (n, cpu_s/sim_s spread, events/s spread)} of a cell's per-arm
+    ##PERF## rows, for the arms in `arms` that have one, in that order. Simulated
+    seconds are the `time=` of the ##CONFIG## before each row; a value the row
+    cannot give (no CPU, events or time) is left out, '-' when none is left."""
+    by = {}
+    for s in samples_of_text(text):
+        by.setdefault(s["arm"], []).append(s)
+    out = {}
+    for arm in arms:
+        rows = by.get(arm)
+        if not rows:
+            continue
+        cpu = [s["cpu_s"] / s["time"] for s in rows if s["cpu_s"] is not None and s["time"]]
+        eps = [s["events"] / s["wall_s"] for s in rows if s["events"] is not None and s["wall_s"]]
+        out[arm] = (len(rows), _spread(cpu), _spread(eps))
+    return out
+
+
+def verdict_cost_lines(head, cells):
+    """The cost lines `ns3-campaign verdicts` prints on stderr after its verdicts.
+
+    `head` names every label column, the arm's last (["cell", "arm"]); `cells`
+    is [(labels, text, arms)], labels the columns before the arm. One row per (labels, arm) with ##PERF## rows, under
+    one header; no row at all gives [] (nothing printed). Descriptive only:
+    median and min..max across the cell's seeds, never paired, never a gate."""
+    rows = []
+    for labels, text, arms in cells:
+        for arm, (n, cpu, eps) in arm_cost(text, arms).items():
+            rows.append("\t".join(["cost", *labels, arm, str(n), cpu, eps]))
+    if not rows:
+        return []
+    cols = ["cost", *head, "n", "cpu_s/sim_s median [min..max]", "events/s median [min..max]"]
+    return ["\t".join([*cols, VERDICT_NOTE]), *rows]
 
 
 def _sample_id(s):

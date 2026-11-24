@@ -493,13 +493,14 @@ def test_campaign():
             )
             check(p.returncode == 0, f"benchmarks validate_run.py passes:\n{p.stdout}{p.stderr}")
 
-            code, out, _e = run(["verdicts", plan_path, "--dir", run_dir])
+            code, out, err = run(["verdicts", plan_path, "--dir", run_dir])
             lines = out.splitlines()
             check(
                 len(lines) == 2
                 and all("anthocnet - aodv" in ln and "PAIRED-IMPROVED" in ln for ln in lines),
                 f"verdicts: paired per-seed deltas per cell ({lines})",
             )
+            check(code is None and err == "", f"verdicts: no ##PERF##, nothing new ({err!r})")
 
             # A cell that ran another image is refused.
             work2 = os.path.join(d, "work2")
@@ -995,6 +996,35 @@ def test_cost():
             )
             run(["collect", plan_path, "--work", work, "--out", d + "/runs2"])
             check(len(cp.cost.read_samples(store)) == 83, "collect: a second collect adds nothing")
+
+            # #91: verdicts print per-arm cost on stderr, after stdout's unchanged verdicts.
+            code, v_perf, err = run(["verdicts", plan_path, "--dir", only_run(d + "/runs")])
+            cp.gh = FakeGitHub(cp.load_plan(plan_path))  # the same cells, without ##PERF##
+            run(["build", plan_path, "--work", os.path.join(d, "bare")])
+            run(["dispatch", plan_path, "--work", os.path.join(d, "bare"), "--no-reuse"])
+            bare = os.path.join(d, "runs-bare")
+            run(["collect", plan_path, "--work", os.path.join(d, "bare"), "--out", bare])
+            code_b, v_bare, err_b = run(["verdicts", plan_path, "--dir", only_run(bare)])
+            check(
+                code is None and code_b is None and v_perf == v_bare and v_bare.count("\n") == 2,
+                "verdicts: stdout byte-identical with and without ##PERF##",
+            )
+            check(err_b == "", f"verdicts: no ##PERF##, nothing on stderr ({err_b!r})")
+            rows = err.splitlines()
+            check(
+                rows[0].startswith("cost\tcell\tarm\tn\tcpu_s/sim_s median [min..max]\t")
+                and rows[0].endswith("descriptive, unpaired, noisy; never a verdict or a gate)")
+                and rows[1:]
+                == [
+                    f"cost\t{c}\t{arm}\t20\t{cpu} [{cpu}..{cpu}]\t{eps} [{eps}..{eps}]"
+                    for c in ("grid-rwp", "static-mesh")
+                    for arm, cpu, eps in (
+                        ("anthocnet", "0.006667", "500"),
+                        ("aodv", "0.003333", "1000"),
+                    )
+                ],
+                f"verdicts: per cell and arm, cpu_s / ##CONFIG## time= and events / wall ({rows})",
+            )
 
             code, out, err = run(["plan", plan_path, "--work", os.path.join(d, "none")])
             check(out == empty_out[1], "plan: stdout byte-identical with samples")

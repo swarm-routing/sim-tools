@@ -149,6 +149,17 @@ one tab-separated line each:
 after the arm-versus-control lines, which a plan without `reference` prints
 alone, unchanged.
 
+Cost (#91): after every verdict line, `verdicts` prints on stderr, for every
+collected file (the control's included) and each protocol of it with ##PERF##
+rows, its CPU s per simulated s (cpu_s over the ##CONFIG## time=) and events
+per wall second, as median [min..max] across the file's seeds:
+
+    cost  <arm>  <cell>  <proto>  <n>  <cpu_s/sim_s>  <events/s>
+
+under one header that labels them descriptive, unpaired and noisy. They are
+never a verdict, never change stdout (AntHocNet's bytes) or the exit code, and
+without ##PERF## rows nothing is printed (cost.verdict_cost_lines).
+
 `plan` prints one line per job: the label, the arm's ns-3 release, its image,
 its source_sha and the command line (#89). The release of a legacy arm
 (`legacy_arms.<arm>`, or a plan-wide `legacy_images`) is the cell's `version`,
@@ -189,9 +200,10 @@ import urllib.request
 import zipfile
 
 try:  # as the ns3_tool package, or as a script beside its siblings
-    from . import bench_parse
+    from . import bench_parse, cost
 except ImportError:
     import bench_parse
+    import cost
 
 CELL_KIND = "benchmark-cell.yml"  # a cell giving harness/args itself
 WORKFLOW = "benchmark-cell.yml"  # the default caller in the protocol repository
@@ -1286,6 +1298,25 @@ def cmd_verdicts(plan, a):
             print(f"{arm}\t{cell}\t{proto}\t{line or '(no paired result; see bench_parse.py)'}")
     if plan.get("reference"):
         reference_verdicts(plan, a)
+    cost_verdicts(plan, a)
+
+
+def cost_verdicts(plan, a):
+    """Each file's per-protocol cost on stderr, after every verdict (#91):
+    descriptive and noisy, so never on stdout (AntHocNet's bytes)."""
+    pairs = sorted(
+        {(cell, arm) for _l, cell, arm, *_ in jobs(plan) if not a.arm or arm == a.arm},
+        key=lambda p: (list(plan["arms"]).index(p[1]), list(plan["cells"]).index(p[0])),
+    )
+    texts = []
+    for cell, arm in pairs:
+        path = os.path.join(a.dir, out_name(plan, cell, arm))
+        if os.path.exists(path):
+            with open(path) as f:
+                texts.append(([arm, cell], f.read(), cell_protocols(plan, cell, arm)))
+    sys.stdout.flush()
+    for line in cost.verdict_cost_lines(["arm", "cell", "protocol"], texts):
+        print(line, file=sys.stderr)
 
 
 def reference_verdicts(plan, a):

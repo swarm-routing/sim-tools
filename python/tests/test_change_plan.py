@@ -792,6 +792,40 @@ def _verdicts_reference():
     expect(vs.split(": ", 1)[1] == out.stdout.splitlines()[0].split("\t")[3], "reference-vs", vs)
 
 
+@case("verdicts: per-protocol cost on stderr only with ##PERF##, stdout unchanged (#91)")
+def _verdicts_cost():
+    bare = verdicts_of(ARA_PLAN)
+    expect(bare.stdout == ARA_VERDICTS and bare.stderr == "", "cost-none", bare.stderr)
+    campaign = os.path.join(PKG, "campaign.py")
+    with tempfile.TemporaryDirectory() as d:
+        name = "anchor-ara-p0-pc769.txt"
+        with open(os.path.join(CELLS, name)) as f:
+            text = f.read()
+        perf = (  # the cell's ##CONFIG## time=900
+            "##PERF## paper ara 1 9.000 10.000 20000 -\n##PERF## paper ara 2 18.000 20.000 60000 -\n"
+            "##PERF## paper aodv 1 4.500 5.000 10000 -\n##PERF## paper aodv 2 4.500 5.000 10000 -\n"
+        )
+        with open(os.path.join(d, name), "w") as f:
+            f.write(text + perf)
+        path = os.path.join(d, "plan.toml")
+        with open(path, "w") as f:
+            f.write(ARA_PLAN)
+        out = subprocess.run([sys.executable, campaign, "verdicts", path, "--dir", d],
+                             capture_output=True, text=True, check=False)  # fmt: skip
+    expect(out.returncode == 0 and out.stdout == ARA_VERDICTS, "cost-stdout", out.stdout)
+    expect(
+        out.stderr.splitlines()
+        == [
+            "cost\tarm\tcell\tprotocol\tn\tcpu_s/sim_s median [min..max]\t"
+            "events/s median [min..max]\t" + cp.cost.VERDICT_NOTE,
+            "cost\tara\tanchor-ara-p0\tara\t2\t0.015 [0.01..0.02]\t2500 [2000..3000]",
+            "cost\tara\tanchor-ara-p0\taodv\t2\t0.005 [0.005..0.005]\t2000 [2000..2000]",
+        ],
+        "cost-stderr",
+        out.stderr,
+    )
+
+
 @case("verdicts: a list of references, every arm, after the unchanged arm lines (bee-anchor-1)")
 def _verdicts_references():
     plan = VERDICT_PLAN.replace('program = "routing-compare"',

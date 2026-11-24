@@ -49,7 +49,12 @@ the same seed by nature. So:
   added); the one reader that pools it across cells is the campaign cost
   estimate (`python/ns3_tool/cost.py`, ns3-tools#95), which predicts
   runner-minutes for `ns3-campaign plan` and its `dispatch` budget guard and
-  never feeds a verdict;
+  never feeds a verdict; `ns3-campaign verdicts` reads it within each cell
+  only, printing per arm the CPU s per simulated s (`cpu_s` over the
+  `##CONFIG##` `time=`) and events/s as median [min..max] across seeds, on
+  stderr after the verdicts, labelled descriptive, unpaired and noisy, never a
+  verdict or an exit code, and nothing at all for a cell without `##PERF##`
+  (ns3-tools#91);
 - the workflow-written lines `##ARGS##` and `##PROV##` are not harness output
   either: they describe how a cell was run, not what it measured.
 - the livelock watch (`--livelockEvents`, NS3-001) adds no marker and no
