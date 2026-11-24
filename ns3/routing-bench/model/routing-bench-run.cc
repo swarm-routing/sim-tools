@@ -105,27 +105,36 @@ constexpr int64_t kStreamStride = 1000000;
 // split-structure invariance are unaffected (the block is still per-seed).
 constexpr int64_t kAppStreamOffset = kStreamStride - 10000;
 
-// #708: the hwmp arm's mesh sub-block. MeshHelper::AssignStreams takes a
-// different number of streams than the ad-hoc devices every other arm
-// installs (four QoS Txops per interface, plus HWMP and peering jitter), and
-// mobility is pinned from the running counter right after the devices. Taken
-// from the running counter, the mesh would therefore move every node to a
-// different position than in the other arms (measured: a 5-hop HWMP path on a
-// field whose oracle shortest path is 6). So the mesh draws from this fixed
-// block, and the running counter advances by exactly what the ad-hoc devices
-// take, keeping mobility and everything after it arm-invariant.
-constexpr int64_t kMeshStreamOffset = kStreamStride / 2;
+// #708: the device sub-block. MeshHelper::AssignStreams takes a different
+// number of streams than the ad-hoc devices every other arm installs (four
+// QoS Txops per interface, plus HWMP and peering jitter), and mobility is
+// pinned from the running counter right after the devices. Taken from the
+// running counter, the mesh would therefore move every node to a different
+// position than in the other arms (measured: a 5-hop HWMP path on a field
+// whose oracle shortest path is 6). So the mesh draws from this fixed block.
+//
+// AntHocNet#1222: the same holds across ns-3 releases. ns-3.49's
+// AdhocWifiMac takes two more streams per device than 3.48's (IBSS beacon
+// jitter and beacon Txop), so, taken from the running counter, the same seed
+// placed and moved the nodes differently on 3.49. The ad-hoc devices' own
+// MAC streams therefore come from this block too (bench::
+// AssignWifiDeviceStreams), and for every arm the running counter advances
+// by bench::kAdhocDeviceStreams per node -- what 3.48's ad-hoc devices took --
+// so the position allocator, mobility and everything after them keep their
+// 3.48 indices on every release. The block holds at most one arm's devices
+// per run: an arm either provides its own (hwmp) or runs on ad-hoc wifi.
+constexpr int64_t kDeviceStreamOffset = kStreamStride / 2;
 
 // Advance `next` by the number of streams a helper's AssignStreams() reported,
 // and abort if this run has overrun its per-seed block — which for the running
-// counter now ends where the fixed application sub-block begins.
+// counter ends where the fixed device sub-block begins.
 void TakeStreams(int64_t& next, int64_t base, int64_t used, const char* what) {
     next += used;
-    NS_ABORT_MSG_IF(next - base >= kAppStreamOffset,
+    NS_ABORT_MSG_IF(next - base >= kDeviceStreamOffset,
                     "RNG stream budget exhausted after assigning "
                         << what << ": this run has consumed " << (next - base)
-                        << " streams but the application sub-block starts at " << kAppStreamOffset
-                        << " — blocks would overlap (#352/#431). Raise the stride.");
+                        << " streams but the device sub-block starts at " << kDeviceStreamOffset
+                        << " — blocks would overlap (#352/#431/#708). Raise the stride.");
 }
 
 // #352 (DSDV's missing AssignStreams wrapper) and #510 (OLSR's source
@@ -1650,35 +1659,36 @@ Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
     // #352: the propagation models configured above are all deterministic, so
     // the channel normally reports 0 streams — pinned anyway so swapping in a
     // fading model (Nakagami, ...) cannot reintroduce the position dependence.
-    // WifiHelper::AssignStreams covers the PHY's reception-error variable, the
-    // MAC/Txop backoff and the rate manager in one call.
     run.devices = devices;
     run.radios = radios;
     TakeStreams(stream, streamBase, channel.AssignStreams(wifiChannel, stream), "wifi channel");
+    // AntHocNet#1222: the devices' streams never move the running counter by
+    // more or less than bench::kAdhocDeviceStreams per node (ns-3.48's ad-hoc
+    // count), whatever this release's devices take, so the scenario pinned
+    // next (position allocator, mobility) is the same on every release and,
+    // on 3.48, exactly what it always was. See kDeviceStreamOffset.
+    NS_ABORT_MSG_IF(stream - streamBase >= kDeviceStreamOffset,
+                    "running stream counter reached the device sub-block (#708)");
+    int64_t deviceUsed = 0;
     if (arm->ProvidesDevices()) {
         // #708: the arm's devices (hwmp: MeshHelper::AssignStreams, the same
         // PHY, MAC and Txop variables through each mesh point's interfaces,
         // plus HWMP's and the peering protocol's own jitter) draw from the
-        // device sub-block (see kMeshStreamOffset). The running counter then
-        // advances by what the ad-hoc arms take: one scratch ad-hoc device,
-        // off this run's channel, measures the per-device count on this ns-3
-        // release.
-        NS_ABORT_MSG_IF(stream - streamBase >= kMeshStreamOffset,
-                        "running stream counter reached the mesh sub-block (#708)");
-        const int64_t meshUsed = arm->AssignDeviceStreams(run, streamBase + kMeshStreamOffset);
-        NS_ABORT_MSG_IF(kMeshStreamOffset + meshUsed >= kAppStreamOffset,
-                        "mesh streams overlap the application sub-block (#708)");
-        NodeContainer scratch;
-        scratch.Create(1);
-        YansWifiPhyHelper scratchPhy = phy;
-        scratchPhy.SetChannel(CreateObject<YansWifiChannel>());
-        const int64_t perDevice = wifi.AssignStreams(wifi.Install(scratchPhy, mac, scratch),
-                                                     streamBase + kMeshStreamOffset + meshUsed);
-        TakeStreams(stream, streamBase, perDevice * static_cast<int64_t>(nodes.GetN()),
-                    "wifi (hwmp: the ad-hoc arms' count, held for pairing)");
+        // device sub-block; the running counter is held where the ad-hoc
+        // arms leave it, for pairing.
+        deviceUsed = arm->AssignDeviceStreams(run, streamBase + kDeviceStreamOffset);
     } else {
-        TakeStreams(stream, streamBase, wifi.AssignStreams(devices, stream), "wifi");
+        // The PHY, station manager and Txop take the 3.48 indices from the
+        // running counter (WifiHelper's order), the MAC's own streams (3.49:
+        // IBSS beacon jitter, beacon Txop) the device sub-block.
+        deviceUsed =
+            bench::AssignWifiDeviceStreams(devices, stream, streamBase + kDeviceStreamOffset);
     }
+    NS_ABORT_MSG_IF(kDeviceStreamOffset + deviceUsed >= kAppStreamOffset,
+                    "device streams overlap the application sub-block (#708)");
+    TakeStreams(stream, streamBase,
+                bench::kAdhocDeviceStreams * static_cast<int64_t>(nodes.GetN()),
+                "wifi (ns-3.48's ad-hoc count, on every release and arm)");
 
     // --- energy accounting (#209, leak-free per #256) ------------------------
     // Hooked here — right after the devices exist, before the routing stack,

@@ -8,9 +8,12 @@
  * arm; that an arm's rows do not depend on the arms run before it
  * (--isolateArms, ns3-tools#198); and the ICMP no-route guard of the aodv arm
  * (NS3-001, #238): nsnam/ns-3-dev!3101's own test, and a partitioned AODV
- * network that livelocks on ns-3.49 without the guard and runs with it.
+ * network that livelocks on ns-3.49 without the guard and runs with it; and
+ * that the scenario's streams do not follow how many the devices take
+ * (swarm-routing/AntHocNet#1222).
  */
 
+#include "ns3/adhoc-wifi-mac.h"
 #include "ns3/aodv-helper.h"
 #include "ns3/aodv-routing-protocol.h"
 #include "ns3/boolean.h"
@@ -23,6 +26,7 @@
 #include "ns3/ipv4-raw-socket-factory.h"
 #include "ns3/ipv4-static-routing-helper.h"
 #include "ns3/ipv4.h"
+#include "ns3/random-variable-stream.h"
 #include "ns3/routing-bench-arm.h"
 #include "ns3/simple-channel.h"
 #include "ns3/simple-net-device-helper.h"
@@ -32,6 +36,8 @@
 #include "ns3/test.h"
 #include "ns3/udp-socket-factory.h"
 #include "ns3/uinteger.h"
+#include "ns3/wifi-helper.h"
+#include "ns3/wifi-net-device.h"
 
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -781,6 +787,132 @@ private:
     }
 };
 
+// AntHocNet#1222: an ad-hoc MAC that takes one stream more than the stock
+// one, as ns-3.49's AdhocWifiMac took two more than 3.48's (IBSS beacons).
+class ExtraStreamAdhocMac : public AdhocWifiMac {
+public:
+    static TypeId GetTypeId() {
+        static TypeId tid = TypeId("ns3::bench::ExtraStreamAdhocMac")
+                                .SetParent<AdhocWifiMac>()
+                                .SetGroupName("RoutingBench")
+                                .AddConstructor<ExtraStreamAdhocMac>();
+        return tid;
+    }
+    int64_t AssignStreams(int64_t stream) override {
+        m_extra->SetStream(stream);
+        return 1 + AdhocWifiMac::AssignStreams(stream + 1);
+    }
+    Ptr<UniformRandomVariable> m_extra = CreateObject<UniformRandomVariable>();
+};
+NS_OBJECT_ENSURE_REGISTERED(ExtraStreamAdhocMac);
+
+// The devices' streams: the stock ad-hoc PHY and Txop keep the running
+// counter's reserved range, a MAC's own streams go to the device sub-block,
+// and a device set that needs another count goes there whole (#1222).
+class DeviceStreamLayoutTest : public TestCase {
+public:
+    DeviceStreamLayoutTest()
+        : TestCase("device streams: the reserved range, the MAC's own, the fallback "
+                   "(AntHocNet#1222)") {}
+
+private:
+    static constexpr uint32_t kNodes = 8;
+    static constexpr int64_t kStream = 1000;  // the running counter at the devices
+    static constexpr int64_t kSpill = 5000;   // the device sub-block
+
+    struct Layout {
+        int64_t spilled = 0;      // streams the devices took from kSpill
+        int64_t helperCount = 0;  // what WifiHelper::AssignStreams counts for them
+        int64_t extraStream = -1;
+    };
+
+    static Layout Assign(const std::string& macType, bool qos) {
+        NodeContainer nodes;
+        nodes.Create(kNodes);
+        WifiHelper wifi;
+        wifi.SetStandard(WIFI_STANDARD_80211b);
+        ApplyRateManager(wifi, "constant2", "80211b");
+        YansWifiChannelHelper channel = YansWifiChannelHelper::Default();
+        YansWifiPhyHelper phy;
+        phy.SetChannel(channel.Create());
+        WifiMacHelper mac;
+        mac.SetType(macType, "QosSupported", BooleanValue(qos));
+        NetDeviceContainer devices = wifi.Install(phy, mac, nodes);
+        Layout l;
+        l.spilled = AssignWifiDeviceStreams(devices, kStream, kSpill);
+        Ptr<WifiNetDevice> d0 = DynamicCast<WifiNetDevice>(devices.Get(0));
+        if (auto extra = DynamicCast<ExtraStreamAdhocMac>(d0->GetMac())) {
+            l.extraStream = extra->m_extra->GetStream();
+        }
+        // Counted last: WifiHelper::AssignStreams re-pins the devices.
+        l.helperCount = WifiHelper().AssignStreams(devices, kStream);
+        Simulator::Destroy();
+        return l;
+    }
+
+    void DoRun() override {
+        const int64_t n = kNodes;
+        const Layout stock = Assign("ns3::AdhocWifiMac", false);
+        const Layout extra = Assign("ns3::bench::ExtraStreamAdhocMac", false);
+        // The QoS MAC's four Txops need another count than the reserved one,
+        // as a future release's devices might.
+        const Layout qos = Assign("ns3::AdhocWifiMac", true);
+        // Stock: the PHY and Txop stay on the reserved range; only the MAC's
+        // own streams (none before ns-3.49, two per device on 3.49) spill.
+        NS_TEST_ASSERT_MSG_EQ(stock.spilled + kAdhocDeviceStreams * n, stock.helperCount,
+                              "stock ad-hoc devices: reserved range + the MAC's own");
+        NS_TEST_ASSERT_MSG_EQ(extra.spilled, stock.spilled + n,
+                              "the extra MAC stream comes from the device sub-block");
+        NS_TEST_ASSERT_MSG_EQ(extra.extraStream, kSpill, "device 0's extra stream");
+        NS_TEST_ASSERT_MSG_GT(qos.helperCount, stock.helperCount, "the QoS MAC takes more");
+        NS_TEST_ASSERT_MSG_EQ(qos.spilled, qos.helperCount,
+                              "another count: every device stream from the sub-block");
+    }
+};
+
+// The harness's placement and movement do not follow the devices' stream
+// count (#1222: ns-3.49's ad-hoc MAC took two more streams per device than
+// 3.48's, and the same seed drew another field). The dummy consumer is the
+// QoS ad-hoc MAC (four Txops instead of one), set through the command line;
+// the node movement --dumpTrace writes must be the same with and without it.
+class PlacementStreamTest : public TestCase {
+public:
+    PlacementStreamTest()
+        : TestCase("placement: the field does not follow the device stream count "
+                   "(AntHocNet#1222)") {}
+
+private:
+    void DoRun() override {
+        if (!Registry().Has("aodv")) RegisterStockArms();
+        const std::string stem = "/tmp/routing-bench-placement-" + std::to_string(getpid());
+        const std::string stock = stem + "-stock.tcl";
+        const std::string more = stem + "-qos.tcl";
+        const std::vector<std::string> base{"--nNodes=10", "--time=20", "--runs=1",
+                                            "--firstRun=2", "--perf=0", "--protocols=aodv"};
+        std::vector<std::vector<std::string>> runs{base, base};
+        runs[0].push_back("--dumpTrace=" + stock);
+        runs[1].push_back("--dumpTrace=" + more);
+        runs[1].push_back("--ns3::WifiMac::QosSupported=true");
+        const std::vector<ChildRun> res = RunHarnessInChildren(runs);
+        auto slurp = [](const std::string& path) {
+            std::ifstream in(path);
+            std::stringstream text;
+            text << in.rdbuf();
+            std::remove(path.c_str());
+            return text.str();
+        };
+        const std::string a = slurp(stock);
+        const std::string b = slurp(more);
+        for (std::size_t i = 0; i < res.size(); ++i) {
+            NS_TEST_ASSERT_MSG_EQ(res[i].status, 0, "run " << i << " exits cleanly");
+        }
+        NS_TEST_ASSERT_MSG_NE(a.find("$node_(9) set X_"), std::string::npos,
+                              "the trace places every node");
+        NS_TEST_ASSERT_MSG_EQ(a == b, true,
+                              "the device stream count moved the placement or the movement");
+    }
+};
+
 class RoutingBenchTestSuite : public TestSuite {
 public:
     RoutingBenchTestSuite() : TestSuite("routing-bench", BENCH_TEST_TYPE_UNIT) {
@@ -790,6 +922,8 @@ public:
         AddTestCase(new ArmIsolationTest, BENCH_TEST_QUICK);
         AddTestCase(new IcmpNoRouteGuardTest, BENCH_TEST_QUICK);
         AddTestCase(new AodvPartitionGuardTest, BENCH_TEST_QUICK);
+        AddTestCase(new DeviceStreamLayoutTest, BENCH_TEST_QUICK);
+        AddTestCase(new PlacementStreamTest, BENCH_TEST_QUICK);
     }
 };
 

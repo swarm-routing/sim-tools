@@ -50,6 +50,14 @@ the same seed by nature. So:
 - the workflow-written lines `##ARGS##` and `##PROV##` are not harness output
   either: they describe how a cell was run, not what it measured.
 
+Across ns-3 releases a seed draws the same scenario: node placement, movement
+and the flows' start times are pinned to streams that do not depend on how
+many streams the release's devices take (swarm-routing/AntHocNet#1222; the
+layout is in [`ns3/routing-bench/README.md`](../ns3/routing-bench/README.md)
+"The same field on every ns-3 release"). Result lines can still differ between
+releases wherever ns-3 itself behaves differently, so a cell pins its image
+and two releases are compared by seed, never row for row.
+
 ## The lines, per seed and arm
 
 For each arm (in `--protocols` order) and each seed `firstRun..firstRun+runs-1`

@@ -31,7 +31,7 @@ it depends on none of them.
 | `examples/routing-compare.cc` | the program |
 | `examples/anthocnet-compare.cc` | the same program under its original name (ADR-0027 §4), kept at least through v3.x |
 | `examples/CMakeLists.txt` | finds the arm modules installed beside it and generates `arms-generated.cc` (#768) |
-| `test/routing-bench-test-suite.cc` | registry rules, the stock arms, that every stock arm's rows are the same alone and after other arms and a reshaped heap, and the ICMP no-route guard (nsnam/ns-3-dev!3101's test; a partitioned AODV network that livelocks on ns-3.49 unguarded and runs guarded) (`./test.py -s routing-bench`) |
+| `test/routing-bench-test-suite.cc` | registry rules, the stock arms, that every stock arm's rows are the same alone and after other arms and a reshaped heap, the ICMP no-route guard (nsnam/ns-3-dev!3101's test; a partitioned AODV network that livelocks on ns-3.49 unguarded and runs guarded), and that the field a seed draws does not follow the devices' stream count (swarm-routing/AntHocNet#1222) (`./test.py -s routing-bench`) |
 
 The other arms live in their own modules, each in one
 `helper/<module>-bench-arms.cc`: `anthocnet`, `aomdv`, `gpsr` (`gpsr`, `gpcr`,
@@ -86,6 +86,42 @@ byte-identical to unguarded AODV. On ns-3.49 a run that did finish can still
 move: the errors !3101 suppresses are no longer sent. The guard is generic
 over any `Ipv4RoutingHelper`; an AODV-derived arm in another module can wrap
 its own helper the same way.
+
+## The same field on every ns-3 release (stream layout)
+
+Every random variable of a run is pinned to a stream inside the seed's own
+block, `[seed * 10^6, (seed + 1) * 10^6)` (AntHocNet #352), so a run is a
+function of its seed and flags, not of the runs before it. Inside the block:
+
+| streams (from the block's start) | what |
+|---|---|
+| running counter, from 0 | the channel; then the devices' **reserved** range, `bench::kAdhocDeviceStreams` (2) per node; the position allocator; mobility (and the Manhattan schedule); the internet stack (ARP jitter); the arm's routing streams |
+| 500 000 (`kDeviceStreamOffset`) | the device sub-block: hwmp's 802.11s devices (#708), or the ad-hoc MAC's own streams |
+| 990 000 (`kAppStreamOffset`) | the applications: flow start times and on/off variables (#431) |
+
+The reserved range is what ns-3.48's `WifiHelper::AssignStreams` takes for an
+ad-hoc device (the PHY's stream and the Txop's backoff), and the running
+counter advances by exactly that per node on every release and in every arm.
+ns-3.49 added IBSS beacons to `AdhocWifiMac`, which take two more streams
+per device; taken from the running counter, as before, they moved the
+position allocator and everything after it, so the same seed drew another
+field on 3.49 (swarm-routing/AntHocNet#1222). `bench::AssignWifiDeviceStreams`
+gives the PHY, station manager and Txop their ns-3.48 indices on the reserved
+range and the MAC's own streams (3.49's beacon jitter and beacon Txop) the
+device sub-block; a release whose PHY, managers or Txops need another count
+gets all of its device streams from the device sub-block instead. So:
+
+- on ns-3.48 every stream keeps its index and the output is byte-identical to
+  earlier releases of the harness;
+- on ns-3.49 a seed places and moves the nodes exactly as on 3.48, and the
+  arms' routing jitter, ARP and the applications draw from the same streams;
+  rows still move wherever ns-3 itself changed behaviour between the releases;
+- a future release whose devices take another count keeps the field too
+  (the suite's placement test runs the harness with the QoS ad-hoc MAC, four
+  Txops instead of one, and requires the same `--dumpTrace` movement).
+
+No two consumers share a stream: the running counter aborts before it
+reaches the device sub-block, the device sub-block before the applications.
 
 ## Registering an arm
 
