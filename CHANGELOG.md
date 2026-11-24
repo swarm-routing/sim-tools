@@ -1,3 +1,14 @@
+## v1.1.4 (2026-11-24)
+
+### Feat
+
+- **routing-bench**: fail a run fast when simulated time stops advancing (#334)
+- **campaign**: rolling image tag for change-test plans (#330)
+
+### Fix
+
+- **routing-bench**: draw the scenario independently of the device stream count (#331)
+
 ## v1.1.3 (2026-11-24)
 
 The `aodv` arm runs on ns-3.49 again: it installs stock AODV behind a guard
