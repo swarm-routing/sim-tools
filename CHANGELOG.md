@@ -1,5 +1,16 @@
 ## v1.1.3 (2026-11-24)
 
+The `aodv` arm runs on ns-3.49 again: it installs stock AODV behind a guard
+that applies the proposed upstream fix's ICMP rules
+([nsnam/ns-3-dev!3101](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/3101); NS3-001,
+[`docs/ns3-bugs.md`](docs/ns3-bugs.md)), so a partitioned run no longer
+livelocks, and output on ns-3.48 is byte-identical to v1.1.2. The Python
+distribution is renamed: from this release it is **`swarm-sim-tools`** on PyPI
+(`ns3-tools` holds v1.1.0 to v1.1.2; `sim-tools` is taken), with the same
+`ns3_tool` package and console scripts. Uninstall `ns3-tools` before installing
+it (README "Moving from `ns3-tools`"). The wheel and sdist release assets are
+`swarm_sim_tools-1.1.3-*` (#324).
+
 ### Feat
 
 - **routing-bench**: guard the aodv arm against the ns-3.49 icmp livelock (ns3-001) (#322)
