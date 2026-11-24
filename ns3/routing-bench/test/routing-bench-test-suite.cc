@@ -17,6 +17,7 @@
 #include "ns3/aodv-helper.h"
 #include "ns3/aodv-routing-protocol.h"
 #include "ns3/boolean.h"
+#include "ns3/failure-schedule.h"
 #include "ns3/icmp-error-guard-helper.h"
 #include "ns3/icmpv4.h"
 #include "ns3/inet-socket-address.h"
@@ -46,10 +47,12 @@
 
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -1073,6 +1076,192 @@ private:
     }
 };
 
+namespace {
+
+void WriteFile(const std::string& path, const std::string& text) {
+    std::ofstream out(path, std::ios::binary);
+    out << text;
+}
+
+// Flow 0's cumulative deliveries at each --seriesEvery sample of one arm.
+std::map<long, uint64_t> SeriesRx(const std::string& output, const std::string& arm) {
+    std::map<long, uint64_t> rx;
+    std::istringstream in(output);
+    std::string line;
+    const std::string head = "# series " + arm + " ";
+    while (std::getline(in, line)) {
+        if (line.rfind(head, 0) != 0) continue;
+        const std::size_t t = line.find(" t=");
+        const std::size_t r = line.find(" rx=");
+        if (t == std::string::npos || r == std::string::npos) continue;
+        rx[std::lround(std::stod(line.substr(t + 3)))] = std::stoull(line.substr(r + 4));
+    }
+    return rx;
+}
+
+}  // namespace
+
+// ns3-tools#128: --failures. A five-node chain 0-1-2-3-4 (100 m apart, a
+// 150 m disk) carries one flow 0 -> 4. The relay 2 shuts down (or crashes)
+// at 20 s and starts at 35 s, or the link 1-2 goes down and up at the same
+// times: delivery stops while the chain is cut and recovers after, for aodv,
+// olsr and dsdv. The same seed and schedule give the same bytes, in one process
+// and isolated; an empty schedule changes nothing but its two ##CONFIG##
+// keys; and a bad file is refused with its line.
+class FailuresTest : public TestCase {
+public:
+    FailuresTest()
+        : TestCase("failures: scripted node and link failures stop and restore delivery "
+                   "(ns3-tools#128)") {}
+
+private:
+    void DoRun() override {
+        NS_TEST_ASSERT_MSG_EQ(Sha256Hex(""),
+                              "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                              "sha256 of nothing");
+        NS_TEST_ASSERT_MSG_EQ(Sha256Hex("abc"),
+                              "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                              "sha256 of 'abc' (FIPS 180-4)");
+        NS_TEST_ASSERT_MSG_EQ(
+            Sha256Hex(std::string(1000, 'a')),
+            "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3",
+            "sha256 over several blocks");
+
+        if (!Registry().Has("aodv")) RegisterStockArms();
+        const std::string stem = "/tmp/routing-bench-failures-" + std::to_string(getpid());
+        const std::string trace = stem + "-chain.tcl";
+        const std::string flows = stem + "-flows.txt";
+        std::ostringstream chain;
+        for (int i = 0; i < 5; ++i) {
+            chain << "$node_(" << i << ") set X_ " << 100 * i << ".0\n"
+                  << "$node_(" << i << ") set Y_ 0.0\n"
+                  << "$node_(" << i << ") set Z_ 0.0\n";
+        }
+        WriteFile(trace, chain.str());
+        WriteFile(flows, "0 4 1 59 2048\n");
+        const std::string shutdown = stem + "-shutdown.txt";
+        const std::string crash = stem + "-crash.txt";
+        const std::string link = stem + "-link.txt";
+        const std::string empty = stem + "-empty.txt";
+        WriteFile(shutdown, "# the relay\n20 2 shutdown\n35 2 start\n");
+        WriteFile(crash, "35 2 start   # file order does not matter\n20 2 crash\n");
+        WriteFile(link, "20 2-1 down\n35 1-2 up\n");
+        const std::string emptyText = "# no failures\n\n";
+        WriteFile(empty, emptyText);
+        // The refusals: what each file holds, and what its message must say.
+        const std::vector<std::pair<std::string, std::string>> bad{
+            {"10 2 shutdown\n10 2\n", ":2: expected '<time> <node>"},
+            {"10 2 reboot\n", ":1: node op 'reboot' must be start, shutdown or crash"},
+            {"# up\n10 2 start\n", ":2: start of node 2 at 10 s, which is already up"},
+            {"10 1-1 down\n", ":1: link '1-1' must be two distinct node ids in [0, 5)"},
+            {"10 5 crash\n", ":1: node '5' must be a node id in [0, 5)"},
+            {"60 2 crash\n", ":1: time '60' must be a number of seconds in [0, --time=60)"},
+            {"10 1-2 down\n20 2-1 down\n", ":2: down of link 1-2 at 20 s, which is already down"},
+            {"", ":10001: more than 10000 events, the cap"},
+        };
+        std::vector<std::string> badPaths;
+        for (std::size_t k = 0; k < bad.size(); ++k) {
+            badPaths.push_back(stem + "-bad" + std::to_string(k) + ".txt");
+            std::string text = bad[k].first;
+            if (text.empty()) {
+                for (std::size_t i = 0; i <= kMaxFailureEvents; ++i) text += "1 0-1 down\n";
+            }
+            WriteFile(badPaths.back(), text);
+        }
+
+        const std::vector<std::string> chainArgs{
+            "--mobility=trace", "--traceFile=" + trace, "--flowsFile=" + flows, "--range=150",
+            "--time=60",        "--runs=1",             "--perf=0",             "--diag",
+            "--seriesEvery=5",  "--protocols=aodv,olsr,dsdv"};
+        auto on = [&chainArgs](const std::string& file, std::vector<std::string> extra = {}) {
+            std::vector<std::string> a = chainArgs;
+            if (!file.empty()) a.push_back("--failures=" + file);
+            a.insert(a.end(), extra.begin(), extra.end());
+            return a;
+        };
+        const std::vector<std::string> small{"--nNodes=8",  "--time=8", "--runs=2", "--perf=0",
+                                             "--protocols=aodv,olsr,dsdv"};
+        std::vector<std::string> smallEmpty = small;
+        smallEmpty.push_back("--failures=" + empty);
+        std::vector<std::vector<std::string>> runs{
+            on(""),                            // 0: no failures
+            on(shutdown),                      // 1
+            on(crash),                         // 2
+            on(link),                          // 3
+            on(shutdown),                      // 4: 1 again
+            on(shutdown, {"--isolateArms=0"}), // 5: 1 in one process
+            small,                             // 6: no file
+            smallEmpty,                        // 7: an empty file
+        };
+        for (const std::string& p : badPaths) runs.push_back(on(p));  // 8..
+        const auto t0 = std::chrono::steady_clock::now();
+        const std::vector<ChildRun> res = RunHarnessInChildren(runs, true);
+        const double wallS =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        std::clog << "failures: " << runs.size() << " harness runs in " << wallS << " s\n";
+        for (const std::string& p :
+             {trace, flows, shutdown, crash, link, empty}) {
+            std::remove(p.c_str());
+        }
+        for (const std::string& p : badPaths) std::remove(p.c_str());
+
+        for (std::size_t i = 0; i < 8; ++i) {
+            NS_TEST_ASSERT_MSG_EQ(res[i].status, 0,
+                                  "run " << i << " exits cleanly; stderr:\n" << res[i].errors);
+        }
+        const std::vector<std::pair<std::size_t, std::string>> cut{
+            {1, "relay shutdown"}, {2, "relay crash"}, {3, "link 1-2 down"}};
+        // Samples every 5 s up to 55 s: 10..20 before the failure, 25..35
+        // while the chain is cut (after what was in flight at 20 s), 45..55
+        // ten seconds after it heals.
+        for (const std::string arm : {"aodv", "olsr", "dsdv"}) {
+            const std::map<long, uint64_t> base = SeriesRx(res[0].output, arm);
+            NS_TEST_ASSERT_MSG_EQ(base.count(55), 1u, arm << ": a sample at 55 s");
+            NS_TEST_ASSERT_MSG_GT(base.at(35) - base.at(25), 0u, arm << ": the chain delivers");
+            for (const auto& [run, what] : cut) {
+                const std::map<long, uint64_t> rx = SeriesRx(res[run].output, arm);
+                NS_TEST_ASSERT_MSG_EQ(rx.count(55), 1u, arm << ", " << what << ": samples");
+                NS_TEST_ASSERT_MSG_GT(rx.at(20) - rx.at(10), 0u,
+                                      arm << ", " << what << ": delivers before the failure");
+                NS_TEST_ASSERT_MSG_EQ(rx.at(35) - rx.at(25), 0u,
+                                      arm << ", " << what << ": no delivery while cut");
+                NS_TEST_ASSERT_MSG_GT(rx.at(55) - rx.at(45), 0u,
+                                      arm << ", " << what << ": delivery recovers");
+                NS_TEST_ASSERT_MSG_LT(rx.at(55), base.at(55),
+                                      arm << ", " << what << ": the failure cost packets");
+            }
+        }
+        // Same seed, same schedule: the same bytes; and in one process the
+        // same rows.
+        NS_TEST_ASSERT_MSG_EQ(res[1].output, res[4].output, "the same schedule twice");
+        for (const std::string arm : {"aodv", "olsr", "dsdv"}) {
+            NS_TEST_ASSERT_MSG_EQ(ArmRows(res[5].output, arm), ArmRows(res[1].output, arm),
+                                  arm << ": the same rows with --isolateArms=0");
+        }
+        // The schedule names itself on ##CONFIG##, and an empty one changes
+        // nothing else.
+        const std::string keys = " failures=" + empty + " failuresSha256=" + Sha256Hex(emptyText);
+        const std::string& without = res[6].output;
+        const std::string& with = res[7].output;
+        const std::size_t eol = without.find('\n');
+        NS_TEST_ASSERT_MSG_EQ(without.rfind("##CONFIG## ", 0), 0u, "##CONFIG## comes first");
+        NS_TEST_ASSERT_MSG_EQ(without.find(" failures="), std::string::npos,
+                              "no failures keys without --failures");
+        NS_TEST_ASSERT_MSG_EQ(with, without.substr(0, eol) + keys + without.substr(eol),
+                              "an empty schedule adds its two keys and changes no other byte");
+        NS_TEST_ASSERT_MSG_NE(res[1].output.find(" failures=" + shutdown + " failuresSha256="),
+                              std::string::npos, "the schedule is named on ##CONFIG##");
+        for (std::size_t k = 0; k < bad.size(); ++k) {
+            const ChildRun& r = res[8 + k];
+            NS_TEST_ASSERT_MSG_NE(r.status, 0, "bad file " << k << " is refused");
+            NS_TEST_ASSERT_MSG_NE(r.errors.find(badPaths[k] + bad[k].second), std::string::npos,
+                                  "bad file " << k << ": the message; stderr:\n" << r.errors);
+            NS_TEST_ASSERT_MSG_EQ(r.output.find("##RUN## "), std::string::npos,
+                                  "bad file " << k << ": nothing ran");
+        }
+    }
+};
+
 class RoutingBenchTestSuite : public TestSuite {
 public:
     RoutingBenchTestSuite() : TestSuite("routing-bench", BENCH_TEST_TYPE_UNIT) {
@@ -1085,6 +1274,7 @@ public:
         AddTestCase(new DeviceStreamLayoutTest, BENCH_TEST_QUICK);
         AddTestCase(new PlacementStreamTest, BENCH_TEST_QUICK);
         AddTestCase(new LivelockWatchTest, BENCH_TEST_QUICK);
+        AddTestCase(new FailuresTest, BENCH_TEST_QUICK);
     }
 };
 

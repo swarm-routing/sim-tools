@@ -141,3 +141,25 @@ free-form, so the new line is an addition that every v1 reader and `benchmarks`'
 v1 validator accept. Its positional fields enter the machine-readable contract
 with v2 (#79; the matching `schemas/markers/v2.json` entry is
 swarm-routing/benchmarks#33).
+
+## `##CONFIG##`: the failure schedule (`--failures`)
+
+A run under scripted failures (`--failures=<file>`, #128;
+[`ns3/routing-bench/README.md`](../ns3/routing-bench/README.md) "Scripted
+failures") names its schedule with two keys. They are appended to the end of
+the first `##CONFIG##` line, after `isolateArms=`:
+
+```
+##CONFIG## scenario=- nNodes=5 ... protocols=aodv,olsr isolateArms=1 failures=scenes/rt3.failures failuresSha256=3f0c…
+```
+
+| Key | Meaning |
+|-----|---------|
+| `failures` | the `--failures` path, as given on the command line |
+| `failuresSha256` | SHA-256 of the file's bytes, 64 lowercase hex digits: two cells ran under the same failures when this matches, whatever the path |
+
+The keys are printed only with `--failures`. Without it, the `##CONFIG##` line
+and every other line are byte-identical to the harness before #128, so this is
+an appended field under contract v1, not a version bump (golden rule 11). The
+failures add no marker: their effect shows in the result lines, and with
+`--diag --seriesEvery` in the `# series` lines.
