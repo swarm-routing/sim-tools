@@ -192,16 +192,16 @@ merged PRs, so no open issue carries its label).
 
 ## v1.2.0 scope audit (2026-11-24)
 
-Read from the tracker and `main` on 2026-11-24 for [#295](https://github.com/swarm-routing/sim-tools/issues/295).
-None of the 14 issues is closed; the details and evidence are on #295.
+Read from the tracker and `main` on 2026-11-24 for [#295](https://github.com/swarm-routing/sim-tools/issues/295),
+and updated the same evening as PRs landed. The details and evidence are on #295.
 
 | Issue | Acceptance criteria met on `main` | Additive under contract v1 | Waits on |
 |---|---|---|---|
-| [#22](https://github.com/swarm-routing/sim-tools/issues/22) delay metrics | most of the proposal: `jitter`, `off50`, `off90` are v1 `##RUN##` fields, the matched-set delay is `##MATCH##`; no 75th offered percentile | yes | nothing here (CSV and charts are AntHocNet's) |
-| [#91](https://github.com/swarm-routing/sim-tools/issues/91) per-arm cost | 3 of 6 (`##PERF##`, its check, `profiling.md`); state footprint and cost columns in `verdicts` open | partly: two criteria are v2 | #79 for the v2 criteria |
-| [#3](https://github.com/swarm-routing/sim-tools/issues/3) readers package | partly: wheel, sdist and PyPI ship; the full corpus is parsed from the source tree, not an installed wheel | partly: version refusal is v2 | #79 for the refusal |
-| [#96](https://github.com/swarm-routing/sim-tools/issues/96) harness perf | none | yes (byte-identical) | #34 for the oracle part |
-| [#95](https://github.com/swarm-routing/sim-tools/issues/95) cost estimate, budget guard | none | yes | nothing |
+| [#22](https://github.com/swarm-routing/sim-tools/issues/22) delay metrics | **closed as completed**: `jitter`, `off50`, `off90` are v1 `##RUN##` fields, the matched-set delay is `##MATCH##`/`##COMMON##`, the CSV columns are in `ns3-tool sweep`; charts and restating AntHocNet#21 are AntHocNet's | yes | nothing |
+| [#91](https://github.com/swarm-routing/sim-tools/issues/91) per-arm cost | 3 of 6 (`##PERF##`, its check, `profiling.md`), plus `verdicts`' descriptive cost rows ([#347](https://github.com/swarm-routing/sim-tools/pull/347)); the `##DIAG##` state footprint, the v2 reader and the v2 schema open | partly: three criteria need #79 | #79 |
+| [#3](https://github.com/swarm-routing/sim-tools/issues/3) readers package | 1 of 2: CI parses AntHocNet's full corpus through the installed wheel ([#341](https://github.com/swarm-routing/sim-tools/pull/341)) | partly: version refusal is v2 | #79 for the refusal |
+| [#96](https://github.com/swarm-routing/sim-tools/issues/96) harness perf | [#346](https://github.com/swarm-routing/sim-tools/pull/346) open: byte-identical, no measured speed-up on a debug build; held for the maintainer | yes (byte-identical) | the maintainer's call on #346; #34 for the oracle part |
+| [#95](https://github.com/swarm-routing/sim-tools/issues/95) cost estimate, budget guard | 4 of 5 ([#343](https://github.com/swarm-routing/sim-tools/pull/343)): the fit, `plan`'s estimate, the `dispatch` guard (off unless a budget is given), docs; no seed table ships (no published run has `##PERF##` yet) | yes | a `##PERF##`-bearing benchmarks run; the maintainer on a default budget and where the table lives |
 | [#83](https://github.com/swarm-routing/sim-tools/issues/83) one plan schema | none | only if today's plans stay valid | swarm-routing/AntHocNet#905 |
 | [#128](https://github.com/swarm-routing/sim-tools/issues/128), [#150](https://github.com/swarm-routing/sim-tools/issues/150) `--failures` | none | yes | swarm-routing/ns3-swarm-core#43; see below |
 | [#4](https://github.com/swarm-routing/sim-tools/issues/4) bring-your-own-protocol guide | none (`ns3-tool scaffold` exists) | yes | an outside user's run |
