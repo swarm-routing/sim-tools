@@ -1,3 +1,29 @@
+## v1.1.4 (2026-11-24)
+
+A seed now draws the same scenario on every ns-3 release: ns-3.49's ad-hoc
+MAC takes two more RNG streams per device, which shifted the placement,
+mobility and routing streams; the harness now reserves ns-3.48's device
+streams and gives the MAC's own a separate sub-block, so output on ns-3.48 is
+byte-identical to v1.1.3 and ns-3.49 draws ns-3.48's fields
+(swarm-routing/AntHocNet#1222). A run whose simulated time stops advancing (a
+zero-time event storm like NS3-001, [`docs/ns3-bugs.md`](docs/ns3-bugs.md))
+now stops after `--livelockEvents` events at one instant (default 1000000; 0
+disables) with one line on stderr and exit 70, instead of running until the
+job times out; a run it does not stop is byte-identical. Change-test plans may
+name their image by tag with `rolling_image: true`: the campaign's first
+dispatch resolves it to a digest and every later command keeps that digest.
+`stock arms deliver` is now a required check (#329). Additive only: the
+marker contract stays v1.
+
+### Feat
+
+- **routing-bench**: fail a run fast when simulated time stops advancing (#334)
+- **campaign**: rolling image tag for change-test plans (#330)
+
+### Fix
+
+- **routing-bench**: draw the scenario independently of the device stream count (#331)
+
 ## v1.1.3 (2026-11-24)
 
 The `aodv` arm runs on ns-3.49 again: it installs stock AODV behind a guard
