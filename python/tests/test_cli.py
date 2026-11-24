@@ -166,6 +166,38 @@ def test_diagnose():
         b.returncode == a.returncode and b.stdout.endswith(a.stdout), "diagnose --check = results"
     )
     print("ok   diagnose: the drop book, ##DROPID## means, a malformed field refused, --check")
+    test_diagnose_flood()
+
+
+# #351: a synthetic cell with a broadcast-forwarding arm. The `# drops` values
+# are the bring-your-own-protocol guide's toy flood and AODV (its diagnose
+# output, v1.1.4); the ##DROPID## counts are made up, shaped as a flood's.
+FLOOD = """\
+##DROPID## 1 toyflood hopTx=1214 hopRx=95349 delivered=1117
+# drops toyflood pdr=93.09 route=0.00 queue=0.00 mac=0.00 chan=-7853.98 ttl=0.00 sum=-7760.88 other=0.00 [route: setup=- reconv=- repair=-]
+##DROPID## 1 aodv hopTx=3000 hopRx=2800 delivered=1044
+# drops aodv pdr=87.04 route=0.45 queue=5.84 mac=0.00 chan=6.68 ttl=0.00 sum=100.00 other=0.00 [route: setup=- reconv=- repair=-]
+"""
+
+
+def test_diagnose_flood():
+    for c in CELLS:  # no fixture cell is a flood: their output is the unwarned one
+        out = "\n".join(diagnose.report(open(c).read(), c))
+        check("warning:" not in out and " n/a" not in out, f"diagnose warned on {c}")
+    for text, why in ((FLOOD, "hopRx 9.535e+04 > hopTx 1214"),
+                      ("\n".join(ln for ln in FLOOD.splitlines() if "##DROPID##" not in ln),
+                       "chan -7853.98 %")):  # fmt: skip
+        lines = diagnose.report(text, "flood.txt")
+        flood = next(ln for ln in lines if ln.startswith("toyflood "))
+        aodv = next(ln for ln in lines if ln.startswith("aodv "))
+        warn = [ln for ln in lines if "warning:" in ln]
+        check(flood.split()[1:] == ["1", "93.09", "0.00", "0.00", "0.00", "n/a", "0.00", "n/a",
+                                    "0.00"], f"diagnose: the flood's chan and sum ({flood})")  # fmt: skip
+        check(aodv.split()[6] == "6.68" and "n/a" not in aodv, f"diagnose: aodv as read ({aodv})")
+        check(len(warn) == 1 and "toyflood" in warn[0] and why in warn[0]
+              and "chan=-7853.98  sum=-7760.88" in warn[0] and "unicast" in warn[0],
+              f"diagnose: one warning, its reason and the raw values ({warn})")  # fmt: skip
+    print("ok   diagnose: a flooding arm warns (hopRx > hopTx, or a cause < -100 %)")
 
 
 def test_scaffold():
@@ -190,6 +222,11 @@ def test_scaffold():
         check("LIBNAME my-arm" in cmake and "helper/my-arm-bench-arms.cc" in cmake
               and "IN_LIST ns3-all-enabled-modules" in cmake,
               "scaffold: the arm file only where routing-bench is enabled")  # fmt: skip
+        # #351: the repository's name, no old name, no TODO left in the skeleton.
+        text = "".join(open(os.path.join(root, p)).read() for p in got)
+        check("swarm-routing/sim-tools" in text and "ns3-tools" not in text
+              and "TODO" not in text and "AntHocNet" not in text,
+              "scaffold: names swarm-routing/sim-tools, not ns3-tools; no TODO, no AntHocNet")  # fmt: skip
         with contextlib.redirect_stderr(io.StringIO()) as err:
             again = scaffold.main(["my-arm", "--out", d])
             bad = [scaffold.main([n, "--out", d]) for n in ("core", "routing-bench", "My_Arm", "x")]
