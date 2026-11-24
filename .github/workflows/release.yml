@@ -61,6 +61,10 @@ jobs:
       # a dry run builds AntHocNet against this commit, report-only
       # (.github/downstream.txt, swarm-routing/.github#482)
       downstream-consumers: .github/downstream.txt
+      # the vcpkg port of this repository's ns-3 modules (ns3/: routing-bench),
+      # one port per simulator folder, on the ns3 port: each release opens its
+      # bump PR in swarm-routing/vcpkg-registry (swarm-routing/.github#881)
+      vcpkg-ports: sim-tools-ns3
     secrets:
       BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
       BOT_APP_PRIVATE_KEY: ${{ secrets.BOT_APP_PRIVATE_KEY }}
