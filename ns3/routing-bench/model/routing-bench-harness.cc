@@ -276,6 +276,15 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
                  "result follows what earlier arms allocated. 0 runs every arm in this "
                  "process, as before",
                  isolateArms);
+    // NS3-001: stop a run whose simulated time stands still (livelock-watch.h).
+    uint64_t livelockEvents = bench::kDefaultLivelockEvents;
+    cmd.AddValue("livelockEvents",
+                 "Fail a run once this many events have run at one simulated instant: a "
+                 "zero-time livelock such as NS3-001 (docs/ns3-bugs.md), which otherwise "
+                 "runs until the job times out. The run exits non-zero with one line on "
+                 "stderr naming the arm, seed and stuck time; a run it does not stop is "
+                 "byte-identical to one without it. 0 turns it off",
+                 livelockEvents);
     std::string mobilityModel;  // "" = preset default: gaussmarkov for fanet, else rwp
     std::string transport = "udp";
     std::string propagation;  // "" = preset default: urban for vanet, else range
@@ -688,6 +697,7 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     NS_ABORT_MSG_IF(seriesEvery > 0.0 && !g_diag,
                     "--seriesEvery needs --diag: the ant tallies it samples are --diag's (#62)");
     P.seriesEvery = seriesEvery;
+    P.livelockEvents = livelockEvents;
     P.dumpFlows = dumpFlows;
     if (P.mobility == "trace") {
         NS_ABORT_MSG_IF(traceFile.empty(),

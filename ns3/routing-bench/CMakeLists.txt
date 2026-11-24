@@ -50,6 +50,7 @@ build_lib(
     model/urban-obstacle-loss-model.cc
     model/source-refusal-counter.cc
     model/icmp-error-guard-routing.cc
+    model/livelock-watch.cc
     helper/icmp-error-guard-helper.cc
     helper/stock-arms.cc
   HEADER_FILES
@@ -57,6 +58,7 @@ build_lib(
     model/urban-obstacle-loss-model.h
     model/source-refusal-counter.h
     model/icmp-error-guard-routing.h
+    model/livelock-watch.h
     helper/icmp-error-guard-helper.h
     helper/stock-arms.h
   LIBRARIES_TO_LINK

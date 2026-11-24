@@ -284,6 +284,14 @@ void ArmIsolation::WorkerFinish(const std::string& payload) {
     _exit(0);  // GCOVR_EXCL_LINE
 }
 
+void ArmIsolation::Fail(int code) {
+    std::cout.flush();
+    std::cerr.flush();
+    std::fflush(nullptr);
+    DumpCoverage();
+    _exit(code);  // GCOVR_EXCL_LINE
+}
+
 void PayloadReader::Bad(bool bad, const char* what) {
     NS_ABORT_MSG_IF(bad, "--isolateArms: corrupt payload: " << what);
 }
