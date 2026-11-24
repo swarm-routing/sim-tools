@@ -85,13 +85,13 @@ ruff format --config "$(ORG_DIR)/ruff.toml" python"""
 
 
 [docs]
-# the project page keeps its id on the site until the site follows the rename
-# (swarm-routing/swarm-routing.github.io#234; swarm-routing/.github#672)
-arena_id = "ns3-tools"
+# its id in swarm-routing.github.io site/hub/projects.json, the repository's name since the
+# site followed the rename (swarm-routing/swarm-routing.github.io#310; the old page redirects)
+arena_id = "sim-tools"
 [settings]
 # GitHub settings as code: swarm-routing/.github tools/repo-settings (swarm-routing/.github#117).
 description = "Protocol-agnostic ns-3 comparison and diagnostics tooling: the routing-bench harness every protocol arm registers with, the readers and paired statistics for its marker lines behind the ns3-tool CLI, the ns3-campaign driver, and (planned) probes and universal arenas."
-homepage = "https://swarm-routing.github.io/projects/ns3-tools/"
+homepage = "https://swarm-routing.github.io/projects/sim-tools/"
 topics = ["ns-3", "benchmarking", "routing-protocol", "manet", "network-simulation", "statistics", "reproducibility", "aodv", "olsr"]
 ruleset = "tooling"
 # Off for now (maintainer decision 2026-11-11): `false` strips the `release` environment's
