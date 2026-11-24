@@ -14,10 +14,17 @@
 Protocol-agnostic diagnostics and comparison tooling for ns-3: the
 `routing-bench` comparison harness (`ns3/routing-bench/`), the result readers
 and statistics (`python/`) behind one CLI, `ns3-tool` (`compare`, `sweep`,
-`diagnose`, `scaffold`; `pip install ns3-tools` from PyPI from the release after v1.0.0, or `pip install ./python`; then `ns3-tool --help`), the
+`diagnose`, `scaffold`; `pip install swarm-sim-tools` from PyPI from v1.1.3 (`ns3-tools` for v1.1.0 to v1.1.2), or `pip install ./python`; then `ns3-tool --help`), the
 campaign driver `ns3-campaign`, and, planned, non-intrusive probes as their
 own module (#40). **Status:** v1.0.0 is released; it declares today's CLI and marker
 contract v1 stable ([docs/markers.md](docs/markers.md) "Stability").
+
+**Moving from `ns3-tools` (PyPI, v1.1.0 to v1.1.2) to `swarm-sim-tools`:**
+both distributions install the same `ns3_tool` package and console scripts,
+so remove the old one first: `pip uninstall ns3-tools && pip install
+swarm-sim-tools`. If both are already installed, run `pip uninstall
+ns3-tools` and then `pip install --force-reinstall swarm-sim-tools`, since
+uninstalling `ns3-tools` deletes files the new distribution shares.
 
 What each release must show, and what blocks what: [docs/roadmap.md](docs/roadmap.md).
 
