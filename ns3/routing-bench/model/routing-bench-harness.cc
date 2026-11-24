@@ -197,13 +197,11 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     CommandLine cmd(program);
     cmd.AddValue("scenario",
                  "Preset: 'paper' (Broch/CMU calibration field), "
-                 "'thesis' (AntHocNet's own evaluation field, "
-                 "Ducatelle PhD 2007 §5.1.3 — #58), 'fanet' "
-                 "(3-D Gauss-Markov UAV field, #482; provenance in "
-                 "docs/benchmarks/scenarios/fanet.md) or 'vanet' "
+                 "'thesis' (the evaluation field of Ducatelle, "
+                 "PhD thesis 2007, §5.1.3), 'fanet' "
+                 "(3-D Gauss-Markov UAV field) or 'vanet' "
                  "(Manhattan street grid with urban building "
-                 "shadowing, #488; provenance in "
-                 "docs/benchmarks/scenarios/vanet.md)",
+                 "shadowing)",
                  scenario);
     cmd.AddValue("nNodes", "Number of nodes", nNodes);
     cmd.AddValue("time", "Simulation time (s)", simTime);
@@ -211,10 +209,10 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     cmd.AddValue("areaX", "Area width (m)", areaX);
     cmd.AddValue("areaY", "Area height (m)", areaY);
     cmd.AddValue("areaZ",
-                 "Field altitude extent (m), #480. 0 (default; 300 "
+                 "Field altitude extent (m). 0 (default; 300 "
                  "for --scenario=fanet) = the "
                  "planar field every published number used; > 0 "
-                 "places and moves nodes in a 3-D box (FANET, #300). "
+                 "places and moves nodes in a 3-D box (FANET). "
                  "Refused with tworay/nakagami (ground-reflection "
                  "model), ssrwp (planar-only in ns-3) and the gpsr "
                  "arm (2-D headers and planarization)",
@@ -223,30 +221,30 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     cmd.AddValue("speedMin",
                  "Min node speed (m/s): speeds are drawn "
                  "U(speedMin, speed). Default 1 (10 for "
-                 "--scenario=fanet, #482)",
+                 "--scenario=fanet)",
                  speedMin);
     cmd.AddValue("pause", "Random-waypoint pause time (s)", pause);
     cmd.AddValue("range", "Transmission range (m); 0 = ns-3 default channel", range);
     cmd.AddValue("flows", "Number of CBR flows", nFlows);
     cmd.AddValue("cbrBps", "Per-flow CBR rate (bits/s)", cbrBps);
     cmd.AddValue("offTime",
-                 "Source off-phase in s (#521). 0 (default) = "
-                 "constant bit rate; 1 = the pre-#521 schedule "
+                 "Source off-phase in s. 0 (default) = "
+                 "constant bit rate; 1 = the earlier schedule "
                  "(ns-3's default 1 s on / 1 s off, half the "
                  "stated rate), for paired A/B only",
                  offTime);
     cmd.AddValue("sink",
                  "If >=0, all flows converge on this node (gateway "
-                 "hotspot, #71) instead of i->(n-1-i) pairing",
+                 "hotspot) instead of i->(n-1-i) pairing",
                  sink);
     cmd.AddValue("runs",
                  "Number of RNG runs to average (seeds 1..runs); unset "
-                 "= 1, or 20 for --scenario=thesis (#58)",
+                 "= 1, or 20 for --scenario=thesis",
                  runs);
     cmd.AddValue("firstRun",
                  "First RNG run (seed) of this invocation; runs "
                  "cover firstRun..firstRun+runs-1, so a point's "
-                 "seeds can split across dispatches (#126)",
+                 "seeds can split across dispatches",
                  firstRun);
     cmd.AddValue("csv", "Emit machine-readable CSV instead of a table", csv);
     cmd.AddValue("protocols",
@@ -254,23 +252,24 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
                  // "Comma-separated list (a,b,c)" shape is what check-arm-delivery.sh
                  // reads out of --PrintHelp (#435).
                  "Comma-separated list (" + armList +
-                     "). `oracle` is the #296 global-knowledge shortest-path CONTROL "
+                     "). `oracle` is the global-knowledge shortest-path CONTROL "
                      "(upper bound, zero control traffic), off unless named.",
                  protocols);
-    cmd.AddValue("diag", "Emit per-run '# diag' lines (ant tallies, first delivery)", g_diag);
+    cmd.AddValue("diag",
+                 "Emit per-run '# diag' lines (the arm's own control tallies, first delivery)",
+                 g_diag);
     cmd.AddValue("qdiag",
                  "Emit per-run '# qdiag' lines: per-node MAC queue depth "
-                 "distribution (meanQ/maxQ/pctNonzero) — does A2 have a "
-                 "signal? (#73)",
+                 "distribution (meanQ/maxQ/pctNonzero)",
                  g_qdiag);
     cmd.AddValue("perf",
                  "Emit a '##PERF## <scenario> <arm> <seed> <cpu_s> <wall_s> <events> "
-                 "<maxrss_kb>' line per arm and seed (ns3-tools#91): what the run cost, "
+                 "<maxrss_kb>' line per arm and seed (sim-tools#91): what the run cost, "
                  "never a result; maxrss is '-' when the process runs more than one arm",
                  perf);
     bool isolateArms = true;  // ns3-tools#198
     cmd.AddValue("isolateArms",
-                 "Run each arm in its own process (ns3-tools#198): an arm's rows then do not "
+                 "Run each arm in its own process (sim-tools#198): an arm's rows then do not "
                  "depend on the arms listed before it. Stock AODV and DSDV order their "
                  "sockets by heap address, so on a node with several interfaces their "
                  "result follows what earlier arms allocated. 0 runs every arm in this "
@@ -289,7 +288,7 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     std::string transport = "udp";
     std::string propagation;  // "" = preset default: urban for vanet, else range
     cmd.AddValue("transport",
-                 "Transport (#63): 'udp' (CBR OnOff, default — what every "
+                 "Transport: 'udp' (CBR OnOff, default — what every "
                  "published number was measured under) | 'tcp' (saturating "
                  "BulkSend). A TCP cell is its own regime: pdr/thrput/nrl "
                  "change meaning and the reorder columns go absent; read "
@@ -299,66 +298,67 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     double vizStep = 1.0;
     double seriesEvery = 0.0;
     cmd.AddValue("traceFile",
-                 "#639: with --mobility=trace, the ns-2 movement trace to "
+                 "With --mobility=trace, the ns-2 movement trace to "
                  "replay ($node_(i) set X_/Y_/Z_, $ns_ at t \"$node_(i) "
                  "setdest x y speed\"); nNodes is taken from it",
                  traceFile);
     cmd.AddValue("flowsFile",
-                 "#639: explicit flows, one 'src dst start stop cbrBps' "
+                 "Explicit flows, one 'src dst start stop cbrBps' "
                  "per line ('#' comments); replaces the generated "
                  "i -> n-1-i pairing and --flows",
                  flowsFile);
     cmd.AddValue("dumpTrace",
-                 "#639: write the first run's node movement to this file "
+                 "Write the first run's node movement to this file "
                  "as an ns-2 trace (2-D fields only)",
                  dumpTrace);
     cmd.AddValue("vizTrace",
-                 "#641: write the first anthocnet run as a replay trace (JSON "
-                 "lines: positions, data books, strongest routes per step) for "
-                 "the learn site's ns-3 replay",
+                 "Write the first run of an arm that supports replay as a replay "
+                 "trace (JSON lines: positions, data books, strongest routes per "
+                 "step)",
                  vizTrace);
-    cmd.AddValue("vizStep", "#641: --vizTrace sampling interval (s)", vizStep);
+    cmd.AddValue("vizStep", "--vizTrace sampling interval (s)", vizStep);
     cmd.AddValue("seriesEvery",
-                 "#62: with --diag, sample routing control, AntHocNet ant "
-                 "transmissions and per-flow deliveries every S seconds and "
-                 "print them as '# series' lines (0 = off)",
+                 "With --diag, sample routing control, the per-type control "
+                 "transmissions of an arm that reports them and per-flow "
+                 "deliveries every S seconds and print them as '# series' "
+                 "lines (0 = off)",
                  seriesEvery);
     cmd.AddValue("dumpFlows",
-                 "#639: write the first run's generated flows to this "
+                 "Write the first run's generated flows to this "
                  "file in --flowsFile format",
                  dumpFlows);
     cmd.AddValue("mobility",
-                 "Mobility model (#61): 'rwp' (Random Waypoint, default — the "
+                 "Mobility model: 'rwp' (Random Waypoint, default — the "
                  "model every published number was measured under) | 'ssrwp' "
                  "(steady-state RWP, no speed-decay transient) | 'gaussmarkov' "
                  "(smooth correlated tracks; --pause is inert under it) | "
-                 "'manhattan' (#488: vehicles on a --blocksX x --blocksY street "
+                 "'manhattan' (vehicles on a --blocksX x --blocksY street "
                  "grid, Bai et al. 2003; --pause is inert under it) | 'trace' "
-                 "(#639: replay --traceFile)",
+                 "(replay --traceFile)",
                  mobilityModel);
     cmd.AddValue("blocksX",
                  "Manhattan grid / urban channel: blocks along x "
-                 "(#488; streets on the block edges). Default 5 "
+                 "(streets on the block edges). Default 5 "
                  "(4 for --scenario=vanet)",
                  blocksX);
     cmd.AddValue("blocksY",
-                 "Manhattan grid / urban channel: blocks along y "
-                 "(#488). Default 5 (4 for --scenario=vanet)",
+                 "Manhattan grid / urban channel: blocks along y. "
+                 "Default 5 (4 for --scenario=vanet)",
                  blocksY);
     cmd.AddValue("streetWidth",
                  "Urban channel: street width (m); buildings are "
-                 "the blocks inset by half of it (#488)",
+                 "the blocks inset by half of it",
                  streetWidth);
     cmd.AddValue("buildings",
-                 "#580: with --propagation=urban, explicit buildings "
+                 "With --propagation=urban, explicit buildings "
                  "'xmin,ymin,xmax,ymax;...' (m) in place of the street grid's "
-                 "blocks (the disaster scene; tools/bench/disaster_scene.py)",
+                 "blocks",
                  buildings);
     cmd.AddValue("propagation",
-                 "Propagation loss model: 'range' (disk) | 'tworay' (#24) | "
-                 "'nakagami' (#60: the same two-ray path loss plus Nakagami-m "
+                 "Propagation loss model: 'range' (disk) | 'tworay' | "
+                 "'nakagami' (the same two-ray path loss plus Nakagami-m "
                  "fading, so tworay-vs-nakagami isolates fading alone) | "
-                 "'urban' (#488: the same two-ray path loss plus building "
+                 "'urban' (the same two-ray path loss plus building "
                  "shadowing over the Manhattan grid's blocks, Sommer et al. "
                  "2011; requires --mobility=manhattan). "
                  "--range is inert under tworay, nakagami and urban.",
@@ -367,15 +367,15 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     cmd.AddValue("rateManager",
                  "Rate control: constant1|constant2|constant5|constant11 (fixed "
                  "DSSS rate; default constant2, the paper's radio) | constant6 "
-                 "(fixed OFDM 6 Mbit/s, --standard=80211a only, #708) | arf | ideal "
-                 "(ns-3 default; loses ~50% single-hop, #51)",
+                 "(fixed OFDM 6 Mbit/s, --standard=80211a only) | arf | ideal "
+                 "(ns-3 default; loses ~50% single-hop)",
                  rateManager);
     std::string standard = "80211b";
     cmd.AddValue("standard",
                  "Radio: 80211b (default, 2.4 GHz DSSS) | 80211a (5 GHz OFDM; "
                  "needs --propagation=range and --rateManager=constant6|arf|ideal). "
                  "80211a is the static-mesh cell's radio, the band stock ns-3 "
-                 "802.11s runs on, and the hwmp arm requires it (#708)",
+                 "802.11s runs on, and the hwmp arm requires it",
                  standard);
     // #209 energy model. Defaults and their provenance: see the kDefault*
     // block above. Overridable because they are modelling choices, not
@@ -387,7 +387,7 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     double idleCurrentA = kDefaultIdleCurrentA;
     cmd.AddValue("energyJ",
                  "Initial energy per node (J); default 5000 is sized "
-                 "so no node dies in a 900 s run (#209). 0 disables "
+                 "so no node dies in a 900 s run. 0 disables "
                  "energy accounting; energy columns then read 0",
                  energyJ);
     cmd.AddValue("voltageV", "Energy-source supply voltage (V)", voltageV);
@@ -404,7 +404,7 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     cmd.AddValue("pathWindowS",
                  "Window (s) over which distinct next hops used "
                  "for a destination are counted as concurrent "
-                 "paths (#217); default 10",
+                 "paths; default 10",
                  pathWindowS);
     cmd.Parse(argc, argv);
     NS_ABORT_MSG_IF(!ArmIsolation::InWorker() && isolateArms != isolation.Active(),

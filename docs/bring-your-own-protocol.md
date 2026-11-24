@@ -751,19 +751,26 @@ a step, but each can mislead:
 
 - **The drop book is meaningless for a flooding arm** (step 5): every
   broadcast reception counts as a hop, so `chan` goes to about -7800%.
+  After v1.1.4, `ns3-tool diagnose` prints `n/a` and a warning for such an
+  arm (#351; [markers.md](markers.md) "Reading an arm that is not unicast
+  routing").
 - **NRL is 0 for an arm that sends no control packets**: a flood's cost
-  shows in `##AIR##`, not in NRL (step 5).
+  shows in `##AIR##`, not in NRL (step 5; [markers.md](markers.md) says so
+  after v1.1.4).
 - **Concatenated seed blocks:** `ns3-tool compare --all`'s top row per arm
   is the last block's summary table; read the `95% CI n=20` line. `compare`
   also echoes every `##PERF##` line.
 - **The summary table is titled "AntHocNet protocol comparison"**, whatever
-  arms ran.
+  arms ran. It stays so for now: committed cells carry it, and AntHocNet's
+  callers are checked before it changes (#351).
 - **`routing-compare --PrintHelp` cites AntHocNet-internal items**: bare
   issue numbers (`#58`, `#296`, `#639` ...) that are AntHocNet's, and paths
   such as `docs/benchmarks/scenarios/fanet.md` that exist in AntHocNet, not
-  here or in the tarball.
+  here or in the tarball. Gone after v1.1.4 (#351).
 - **The scaffold's comments and README name `swarm-routing/ns3-tools`**, this
-  repository's old name; it is `swarm-routing/sim-tools` now. Its README's
+  repository's old name; it is `swarm-routing/sim-tools` now (the scaffold
+  says so after v1.1.4, #351, and its `TODO` lines read as placeholder
+  notes, so step 3's patch applies to v1.1.4's skeleton only). Its README's
   `docker run` example also mounts a checkout of this repository, which the
   `ns3-build-contrib` call of step 4 does not need.
 - **The delivery-smoke scripts are not shipped** (gate 2):

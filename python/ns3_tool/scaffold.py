@@ -40,7 +40,7 @@ def files(name, holder, year):
     cmake_head = f"# Copyright (c) {year} {holder}\n# SPDX-License-Identifier: GPL-2.0-only\n"
     return {
         "CMakeLists.txt": f"""{cmake_head}#
-# The `{name}` ns-3 contrib module, an arm of swarm-routing/ns3-tools'
+# The `{name}` ns-3 contrib module, an arm of swarm-routing/sim-tools'
 # comparison harness (routing-bench). The arm file is compiled only where
 # routing-bench is installed and enabled, and its library is named through a
 # variable: ns-3 scans module CMakeLists for library tokens, and `{name}` must
@@ -98,13 +98,15 @@ const char* ModuleName() {{
 }}  // namespace ns3
 """,
         f"helper/{name}-bench-arms.cc": f"""{head}//
-// `{name}` as an arm of swarm-routing/ns3-tools' comparison harness
+// `{name}` as an arm of swarm-routing/sim-tools' comparison harness
 // (routing-bench): compiled only when routing-bench is installed beside this
 // module (CMakeLists.txt). routing-compare finds this file and calls
 // RegisterArms_{fn}() at start-up; `--protocols={name}` runs the arm.
 //
-// TODO: replace OlsrHelper, the placeholder, with this module's own helper,
-// and say in RegisterArm's description which paper the arm follows. An arm
+// Placeholder: until this module has its own helper, the arm installs stock
+// ns-3 OLSR (the include, m_helper and RegisterArm's description below).
+// Replace those with the module's helper, and say in RegisterArm's
+// description which paper the arm follows. An arm
 // counts in a comparison only after its three gates (org golden rule 6): a
 // fidelity sheet from its paper, the per-PR delivery smoke, and an anchor
 // reproducing the paper's own trend.
@@ -126,7 +128,7 @@ public:
     }}
 
 private:
-    OlsrHelper m_helper;  // TODO: this module's helper
+    OlsrHelper m_helper;  // the placeholder: this module's helper replaces it
 }};
 
 Ptr<bench::Arm> Make{cls}Arm() {{
@@ -151,21 +153,21 @@ void RegisterArms_{fn}() {{
         "README.md": f"""# {name}
 
 An ns-3 contrib module and an arm of
-[swarm-routing/ns3-tools](https://github.com/swarm-routing/ns3-tools)' comparison
+[swarm-routing/sim-tools](https://github.com/swarm-routing/sim-tools)' comparison
 harness, written by `ns3-tool scaffold {name}`.
 
 - `model/{name}.{{h,cc}}`: the module's code; replace the placeholder with the
   protocol and its helper.
 - `helper/{name}-bench-arms.cc`: the arm. It installs stock OLSR until you
-  name your helper there (the `TODO` lines).
+  name your helper there (the lines marked placeholder).
 - `CMakeLists.txt`: add your sources and the ns-3 libraries they link.
 
 Build it beside `routing-bench` in an `ns3-dev` image and run the arm:
 
 ```bash
-docker run --rm -v "$PWD:/src/{name}:ro" -v /path/to/ns3-tools:/src/ns3-tools:ro \\
+docker run --rm -v "$PWD:/src/{name}:ro" -v /path/to/sim-tools:/src/sim-tools:ro \\
     ghcr.io/swarm-routing/ns3-dev:latest-debug \\
-    ns3-build-contrib routing-bench=/src/ns3-tools/ns3/routing-bench {name}=/src/{name} \\
+    ns3-build-contrib routing-bench=/src/sim-tools/ns3/routing-bench {name}=/src/{name} \\
     --run "routing-compare --scenario=paper --nNodes=20 --time=30 --runs=1 --protocols={name}"
 ```
 
