@@ -101,6 +101,22 @@ jobs:
           persist-credentials: false
       - run: NS3_TOOL_CELLS="$PWD/anthocnet/results/cells" python3 python/tests/test_bench_parse_query.py
         if: steps.changes.outputs.docs-only != 'true'
+      # ns3-tools#3: the same corpus through the built wheel, installed into a
+      # fresh venv; the test fails if ns3_tool resolves to the source tree.
+      - name: The installed wheel parses every cell
+        if: steps.changes.outputs.docs-only != 'true'
+        timeout-minutes: 5  # two venvs and a hash-pinned install (seconds in a green run)
+        run: |
+          python3 -m venv "$RUNNER_TEMP/build-venv"
+          "$RUNNER_TEMP/build-venv/bin/python" -m pip install --quiet --only-binary :all: --require-hashes -r tools/requirements/build.txt
+          # a copy, so no build/ or egg-info lands in the checkout; -L resolves the licence symlinks (#14)
+          cp -rL python "$RUNNER_TEMP/src"
+          "$RUNNER_TEMP/build-venv/bin/python" -m pip wheel --quiet --no-deps --no-build-isolation \
+            -w "$RUNNER_TEMP/dist" "$RUNNER_TEMP/src"
+          python3 -m venv "$RUNNER_TEMP/wheel-venv"
+          "$RUNNER_TEMP/wheel-venv/bin/python" -m pip install --quiet --no-index --no-deps "$RUNNER_TEMP"/dist/swarm_sim_tools-*.whl
+          NS3_TOOL_INSTALLED=1 NS3_TOOL_CELLS="$PWD/anthocnet/results/cells" \
+            "$RUNNER_TEMP/wheel-venv/bin/python" -I python/tests/test_bench_parse_query.py
       # ns3-tools#28: the port's verdicts equal AntHocNet's script on every cell.
       - if: steps.changes.outputs.docs-only != 'true'
         run: |
