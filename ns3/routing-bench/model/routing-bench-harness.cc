@@ -833,8 +833,8 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
         double binWidth = 0.0;
         uint64_t rx = 0;
         double delay99Ms = 0.0;
-        std::map<Address, std::map<uint32_t, double>> bySeq;        // #308
-        std::map<Address, std::map<uint32_t, uint32_t>> hopsBySeq;  // #308 phase 2
+        std::map<Address, SeqBook<double>> bySeq;        // #308
+        std::map<Address, SeqBook<uint32_t>> hopsBySeq;  // #308 phase 2
     };
     // #308/#369: record what this invocation actually ran, in the compact
     // block, before any result row. A benchmark number is only reproducible if
@@ -909,7 +909,30 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
     // ns3-tools#198: an arm's aggregates as its worker sends them back. Agg is
     // copied as bytes; a MatchCell field added later goes in both lambdas.
     static_assert(std::is_trivially_copyable_v<Agg>, "Agg travels as bytes (--isolateArms)");
-    const auto packArm = [](const Agg& a, const std::vector<MatchCell>& cells) {
+    // #96: a (flow, seq) book travels flow by flow, each as its two vectors.
+    const auto putBooks = [](std::string& out, const auto& books) {
+        Put(out, static_cast<uint64_t>(books.size()));
+        for (const auto& [flow, book] : books) {
+            Put(out, flow);
+            Put(out, book.value);
+            Put(out, book.has);
+        }
+    };
+    const auto getBooks = [](PayloadReader& r, auto& books) {
+        uint64_t n = 0;
+        r.Get(n);
+        books.clear();
+        for (uint64_t k = 0; k < n; ++k) {
+            Address flow;
+            r.Get(flow);
+            auto& book = books[flow];
+            r.Get(book.value);
+            r.Get(book.has);
+            NS_ABORT_MSG_UNLESS(book.value.size() == book.has.size(),
+                                "--isolateArms: a (flow, seq) book out of step");
+        }
+    };
+    const auto packArm = [&putBooks](const Agg& a, const std::vector<MatchCell>& cells) {
         std::string out;
         Put(out, a);
         Put(out, static_cast<uint64_t>(cells.size()));
@@ -918,12 +941,13 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
             Put(out, c.binWidth);
             Put(out, c.rx);
             Put(out, c.delay99Ms);
-            Put(out, c.bySeq);
-            Put(out, c.hopsBySeq);
+            putBooks(out, c.bySeq);
+            putBooks(out, c.hopsBySeq);
         }
         return out;
     };
-    const auto unpackArm = [](const std::string& in, Agg& a, std::vector<MatchCell>& cells) {
+    const auto unpackArm = [&getBooks](const std::string& in, Agg& a,
+                                       std::vector<MatchCell>& cells) {
         PayloadReader r(in);
         r.Get(a);
         uint64_t n = 0;
@@ -934,8 +958,8 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
             r.Get(c.binWidth);
             r.Get(c.rx);
             r.Get(c.delay99Ms);
-            r.Get(c.bySeq);
-            r.Get(c.hopsBySeq);
+            getBooks(r, c.bySeq);
+            getBooks(r, c.hopsBySeq);
         }
         NS_ABORT_MSG_UNLESS(r.Done(), "--isolateArms: a worker sent more than one arm");
     };
@@ -958,8 +982,8 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
             mc.binWidth = r.delayBinWidth;
             mc.rx = r.rxPackets;
             mc.delay99Ms = r.delay99Ms;
-            mc.bySeq = r.rxDelayBySeq;
-            mc.hopsBySeq = r.rxHopsBySeq;
+            mc.bySeq = std::move(r.rxDelayBySeq);  // #96: moved, not copied
+            mc.hopsBySeq = std::move(r.rxHopsBySeq);
             // #128: per-run (per-seed) row for paired statistics. Every
             // protocol sees the identical RNG realisation per run, so
             // downstream can pair rows by run number (per-seed deltas, sign
@@ -1267,24 +1291,27 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
             return 1000.0 * v[i];
         };
         for (uint32_t s = firstRun; s < firstRun + runs; ++s) {
-            // Keys delivered by every protocol this run.
-            std::set<std::pair<Address, uint32_t>> common;
-            bool first = true;
-            for (std::size_t i = 0; i < list.size(); ++i) {
-                std::set<std::pair<Address, uint32_t>> mine;
-                for (const auto& f : matchGrid[i][s - firstRun].bySeq)
-                    for (const auto& kv : f.second) mine.insert({f.first, kv.first});
-                if (first) {
-                    common = mine;
-                    first = false;
-                    continue;
+            // Keys delivered by every protocol this run: per flow, a mask over
+            // seq (#96: dense, like the books it is cut from).
+            std::map<Address, std::vector<uint8_t>> common;
+            if (!list.empty())
+                for (const auto& f : matchGrid[0][s - firstRun].bySeq) common[f.first] = f.second.has;
+            for (std::size_t i = 1; i < list.size(); ++i) {
+                const auto& mine = matchGrid[i][s - firstRun].bySeq;
+                for (auto& [flow, mask] : common) {
+                    const auto m = mine.find(flow);
+                    for (uint32_t q = 0; q < mask.size(); ++q)
+                        if (mask[q] && (m == mine.end() || !m->second.Has(q))) mask[q] = 0;
                 }
-                std::set<std::pair<Address, uint32_t>> both;
-                std::set_intersection(common.begin(), common.end(), mine.begin(), mine.end(),
-                                      std::inserter(both, both.begin()));
-                common.swap(both);
             }
-            if (common.empty()) {
+            std::size_t nCommon = 0;
+            for (const auto& [flow, mask] : common)
+                nCommon += static_cast<std::size_t>(std::count(mask.begin(), mask.end(), 1));
+            const auto inCommonSet = [&common](const Address& flow, uint32_t seq) {
+                const auto c = common.find(flow);
+                return c != common.end() && seq < c->second.size() && c->second[seq];
+            };
+            if (nCommon == 0) {
                 // #218: arms that each delivered something always share keys
                 // (same flows, same seeds); none shared means the keys did not
                 // line up, and the rows would vanish without a word.
@@ -1302,13 +1329,13 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
                 std::vector<double> inCommon, surplus;
                 std::size_t nSelf = 0;
                 for (const auto& f : matchGrid[i][s - firstRun].bySeq) {
-                    for (const auto& kv : f.second) {
+                    f.second.ForEach([&](uint32_t seq, double d) {
                         ++nSelf;
-                        if (common.count({f.first, kv.first}))
-                            inCommon.push_back(kv.second);
+                        if (inCommonSet(f.first, seq))
+                            inCommon.push_back(d);
                         else
-                            surplus.push_back(kv.second);
-                    }
+                            surplus.push_back(d);
+                    });
                 }
                 // #308 phase 2: the same split over hop counts. Averaged over
                 // exactly the packets whose delays produced meanCommon, so
@@ -1316,15 +1343,15 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
                 // instead of a quotient of two differently-sized ones.
                 uint64_t hopSumC = 0, hopNC = 0, hopSumS = 0, hopNS = 0;
                 for (const auto& f : matchGrid[i][s - firstRun].hopsBySeq) {
-                    for (const auto& kv : f.second) {
-                        if (common.count({f.first, kv.first})) {
-                            hopSumC += kv.second;
+                    f.second.ForEach([&](uint32_t seq, uint32_t hops) {
+                        if (inCommonSet(f.first, seq)) {
+                            hopSumC += hops;
                             ++hopNC;
                         } else {
-                            hopSumS += kv.second;
+                            hopSumS += hops;
                             ++hopNS;
                         }
-                    }
+                    });
                 }
                 const double p99c = pct(inCommon, 0.99);
                 const double meanc =
@@ -1336,7 +1363,7 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
                 const double hopsc = hopNC ? static_cast<double>(hopSumC) / hopNC : -1.0;
                 const double hopss = hopNS ? static_cast<double>(hopSumS) / hopNS : -1.0;
                 std::cout << std::fixed << "##COMMON## " << s << ' ' << list[i] << ' ' << nSelf
-                          << ' ' << common.size() << ' ' << std::setprecision(1) << p99c << ' '
+                          << ' ' << nCommon << ' ' << std::setprecision(1) << p99c << ' '
                           << std::setprecision(1) << meanc << ' ';
                 if (p99s < 0)
                     std::cout << "na";

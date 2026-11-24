@@ -48,6 +48,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace routing_bench_detail {
 
@@ -140,9 +141,25 @@ template <typename K, typename V> void Put(std::string& out, const std::map<K, V
     }
 }
 
+// #96: a vector of plain values travels as its length, then its bytes.
+template <typename T> void Put(std::string& out, const std::vector<T>& v) {
+    static_assert(std::is_trivially_copyable_v<T>, "Put copies bytes");
+    Put(out, static_cast<uint64_t>(v.size()));
+    if (!v.empty()) out.append(reinterpret_cast<const char*>(v.data()), v.size() * sizeof(T));
+}
+
 class PayloadReader {
 public:
     explicit PayloadReader(const std::string& s) : m_s(s) {}
+
+    template <typename T> void Get(std::vector<T>& v) {
+        static_assert(std::is_trivially_copyable_v<T>, "Get copies bytes");
+        uint64_t n = 0;
+        Get(n);
+        Bad(n > (m_s.size() - m_pos) / sizeof(T), "vector longer than the payload");
+        v.resize(n);
+        if (n) Take(v.data(), n * sizeof(T));
+    }
 
     template <typename T> void Get(T& v) {
         static_assert(std::is_trivially_copyable_v<T>, "Get copies bytes");

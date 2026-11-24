@@ -15,7 +15,10 @@
 #include "livelock-watch.h"
 #include "routing-bench-arm.h"
 
+#include "ns3/abort.h"
+
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -107,6 +110,32 @@ struct Params {
     uint64_t livelockEvents = bench::kDefaultLivelockEvents;
 };
 
+// #96: one flow's per-packet values, indexed by sequence number. The harness's
+// own sources number their packets densely from 0, so a vector replaces the
+// per-flow std::map<uint32_t, V> the (flow, seq) books used (a node per entry);
+// `has` marks the sequence numbers that hold a value. Visited in ascending seq,
+// the order the map gave. Rule 7: a flow sends at most kMaxSeq packets.
+template <typename V> struct SeqBook {
+    static constexpr uint32_t kMaxSeq = 1u << 26;
+    std::vector<V> value;
+    std::vector<uint8_t> has;
+
+    V& operator[](uint32_t seq) {
+        if (seq >= has.size()) {
+            NS_ABORT_MSG_IF(seq >= kMaxSeq, "SeqBook: sequence number " << seq << " over the cap");
+            value.resize(seq + 1);
+            has.resize(seq + 1, 0);
+        }
+        has[seq] = 1;
+        return value[seq];
+    }
+    bool Has(uint32_t seq) const { return seq < has.size() && has[seq]; }
+    template <typename F> void ForEach(F f) const {
+        for (uint32_t s = 0; s < has.size(); ++s)
+            if (has[s]) f(s, value[s]);
+    }
+};
+
 struct Result {
     std::string proto;
     uint64_t txPackets = 0;
@@ -134,10 +163,10 @@ struct Result {
     // #308: (flow, seq) -> delay (s) for every delivered packet, so the tails
     // can be compared over the packets *every* protocol delivered rather than
     // over each protocol's own differently-sized delivered set.
-    std::map<Address, std::map<uint32_t, double>> rxDelayBySeq;
+    std::map<Address, SeqBook<double>> rxDelayBySeq;
     // #308 phase 2: the same keys carrying hop counts, so the common set can be
     // normalised by path length like-for-like.
-    std::map<Address, std::map<uint32_t, uint32_t>> rxHopsBySeq;
+    std::map<Address, SeqBook<uint32_t>> rxHopsBySeq;
     // #308 phase 2 step 4: pending-queue hold-time attribution, summed over
     // nodes. `holdValid` is false for every arm whose protocol has no measured
     // pending queue (AntHocNet has one) — see the ##HOLD## emission for why

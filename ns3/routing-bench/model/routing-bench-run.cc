@@ -145,35 +145,124 @@ uint64_t g_controlPkts = 0;     // routing-control packets transmitted this run
 uint64_t g_controlBytes = 0;    // #132: routing-control bytes transmitted this run
 double g_deliveredBytes = 0.0;  // #808: FlowMonitor rxBytes, for EmitRunNote
 
+// --- one classifier per packet (#96) -----------------------------------------
+// Every per-packet hook asks the same few questions of an IPv4 packet: is it
+// routing control, is it a CBR data packet, and which (flow, seq) is it. They
+// used to answer them each on its own Copy() of the packet, with RemoveHeader
+// and PeekHeader, several times per hop. The answers come from a handful of
+// wire bytes, so they are read once into a stack buffer (Packet::CopyData:
+// no copy of the packet, no metadata walk) and kept in this struct.
+//
+// Fragmentation safety (#454, the isl-grid PR #453 fix ported): the L3
+// traces fire once per FRAGMENT when a datagram exceeds the device MTU, and a
+// continuation fragment (offset > 0) carries no L4 header. A UDP fragment's
+// datagram here can only be routing control: data is 64 B CBR (92 B IP
+// packet) against the 2296 B wifi MTU, so it never fragments (the TCP arm's
+// segments — 536 B default MSS — never fragment either, and are protocol 6).
+// Each fragment is an IP packet on the wire, so a UDP one counts as control;
+// the first fragment (offset 0) still carries the UDP header and is classified
+// by port. A continuation fragment is never data, and has no (flow, seq) key.
+struct IpClass {
+    Ipv4Address dst;       // the IPv4 destination (the full-packet forms)
+    bool control = false;  // UDP routing control (CountControlTx counts it)
+    bool data = false;     // a data-port UDP datagram or TCP segment
+    bool keyed = false;    // a SeqTs CBR datagram: src/srcPort/seq are valid
+    Ipv4Address src;
+    uint16_t srcPort = 0;
+    uint32_t seq = 0;
+    uint64_t ts = 0;  // the SeqTs send time, in time steps
+    // The flow key, byte-identical to the PacketSink "Rx" trace's `from`.
+    Address Flow() const { return InetSocketAddress(src, srcPort); }
+};
+
+constexpr uint32_t kUdpHeaderBytes = 8;
+constexpr uint32_t kSeqTsSizeBytes = 20;  // SeqTsSizeHeader: size (8), seq (4), ts (8)
+constexpr uint32_t kIpv4MaxHeaderBytes = 60;
+
+inline uint16_t ReadBe16(const uint8_t* b) {
+    return static_cast<uint16_t>((b[0] << 8) | b[1]);
+}
+inline uint32_t ReadBe32(const uint8_t* b) {
+    return (static_cast<uint32_t>(b[0]) << 24) | (static_cast<uint32_t>(b[1]) << 16) |
+           (static_cast<uint32_t>(b[2]) << 8) | b[3];
+}
+
+// The L4 part: `l4` holds the first `n` bytes after the IPv4 header.
+void ClassifyL4(uint8_t protocol, bool fragment, Ipv4Address src, const uint8_t* l4, uint32_t n,
+                IpClass& c) {
+    if (protocol == 6) {  // TCP (#389)
+        // Pure TCP ACKs are excluded naturally: on the reverse path the
+        // destination port is the sender's ephemeral port, so only forward
+        // data segments count — matching what the UDP arm counts.
+        c.data = !fragment && n >= 4 && ReadBe16(l4 + 2) == kDataPort;
+        return;
+    }
+    if (protocol != 17) return;  // routing control here is UDP
+    if (fragment) {
+        c.control = true;
+        return;
+    }
+    if (n < kUdpHeaderBytes) return;
+    if (ReadBe16(l4 + 2) != kDataPort) {
+        c.control = true;
+        return;
+    }
+    c.data = true;
+    if (n < kUdpHeaderBytes + kSeqTsSizeBytes) return;
+    c.keyed = true;
+    c.src = src;
+    c.srcPort = ReadBe16(l4);
+    c.seq = ReadBe32(l4 + kUdpHeaderBytes + 8);
+    c.ts = (static_cast<uint64_t>(ReadBe32(l4 + kUdpHeaderBytes + 12)) << 32) |
+           ReadBe32(l4 + kUdpHeaderBytes + 16);
+}
+
+// `n` bytes from the front of an IPv4 header.
+IpClass ClassifyIpBytes(const uint8_t* b, uint32_t n) {
+    IpClass c;
+    if (n < 20 || (b[0] >> 4) != 4) return c;  // not IPv4
+    const uint32_t ihl = (b[0] & 0x0fu) * 4u;
+    const bool fragment = (((b[6] & 0x1fu) << 8) | b[7]) != 0;
+    c.dst = Ipv4Address(ReadBe32(b + 16));
+    ClassifyL4(b[9], fragment, Ipv4Address(ReadBe32(b + 12)), b + ihl, n > ihl ? n - ihl : 0, c);
+    return c;
+}
+
+constexpr uint32_t kIpClassBytes = kIpv4MaxHeaderBytes + kUdpHeaderBytes + kSeqTsSizeBytes;
+
+// A full IP packet (the Ipv4L3Protocol "Tx"/"Rx" trace form).
+IpClass ClassifyIp(Ptr<const Packet> p) {
+    uint8_t b[kIpClassBytes];
+    return ClassifyIpBytes(b, p->CopyData(b, sizeof b));
+}
+
+// A MAC frame body: an LLC/SNAP header, then (EtherType 0x0800) the IP packet;
+// a frame that carries anything else classifies as nothing.
+IpClass ClassifyLlc(Ptr<const Packet> p) {
+    constexpr uint32_t kLlcSnapBytes = 8;  // 6 bytes of LLC/SNAP, then the EtherType
+    uint8_t b[kLlcSnapBytes + kIpClassBytes];
+    const uint32_t n = p->CopyData(b, sizeof b);
+    if (n < kLlcSnapBytes || ReadBe16(b + 6) != 0x0800) return IpClass{};
+    return ClassifyIpBytes(b + kLlcSnapBytes, n - kLlcSnapBytes);
+}
+
+// A packet whose front is the L4 header, its IP header handed over apart (the
+// MacReinject and Ipv4L3Protocol "SendOutgoing"/"Drop"/"LocalDeliver" form).
+IpClass ClassifyL4Packet(const Ipv4Header& ip, Ptr<const Packet> p) {
+    IpClass c;
+    uint8_t b[kUdpHeaderBytes + kSeqTsSizeBytes];
+    const uint32_t n = p->CopyData(b, sizeof b);
+    ClassifyL4(ip.GetProtocol(), ip.GetFragmentOffset() != 0, ip.GetSource(), b, n, c);
+    return c;
+}
+
 // Ipv4L3Protocol "Tx" trace: one call per IP packet sent out an interface (each
 // hop). Count the non-data UDP packets as routing control. Bytes are the full
 // IP packet size at the same hook (#132) — packet-count NRL flatters protocols
 // that send fewer, larger messages (ants carry a visited path; AODV RREQs are
 // small and fixed), so a byte-level number is kept alongside.
-void CountControlTx(Ptr<const Packet> p, Ptr<Ipv4>, uint32_t) {
-    Ptr<Packet> c = p->Copy();
-    Ipv4Header ip;
-    if (c->RemoveHeader(ip) == 0) return;
-    if (ip.GetProtocol() != 17) return;  // not UDP; routing control here is UDP
-    // Fragmentation safety (#454, the isl-grid PR #453 fix ported): this trace
-    // fires once per FRAGMENT when a datagram exceeds the device MTU, and a
-    // continuation fragment (offset > 0) carries no UDP header — peeking one
-    // reads past the buffer (NS_ASSERT abort in debug, undefined read in
-    // release). A UDP fragment's datagram here can only be routing control:
-    // data is 64 B CBR (92 B IP packet) against the 2296 B wifi MTU, so it
-    // never fragments (the TCP arm's segments — 536 B default MSS — never
-    // fragment either, and are protocol 6, already excluded above). Each
-    // fragment is an IP packet on the wire, so it counts as control at this
-    // counting point; the first fragment (offset 0) still carries the UDP
-    // header and is classified by port exactly as before.
-    if (ip.GetFragmentOffset() != 0) {
-        ++g_controlPkts;
-        g_controlBytes += p->GetSize();
-        return;
-    }
-    UdpHeader udp;
-    if (c->PeekHeader(udp) == 0) return;
-    if (udp.GetDestinationPort() != kDataPort) {
+void CountControlTx(const IpClass& c, Ptr<const Packet> p) {
+    if (c.control) {
         ++g_controlPkts;
         g_controlBytes += p->GetSize();
     }
@@ -224,6 +313,15 @@ void StripMeshHeader(Ptr<Packet> pkt, const WifiMacHeader& hdr) {
     if (!g_meshArm || !hdr.IsData()) return;
     dot11s::MeshHeader mesh;
     pkt->RemoveHeader(mesh);
+}
+
+// #96: the frame body as the MAC hooks below read it: the frame's own packet,
+// copied only on a mesh arm's data frame, to strip the mesh header (#708).
+Ptr<const Packet> FrameBody(Ptr<const BENCH_WIFI_MPDU> mpdu) {
+    if (!g_meshArm || !mpdu->GetHeader().IsData()) return mpdu->GetPacket();
+    Ptr<Packet> pkt = mpdu->GetPacket()->Copy();
+    StripMeshHeader(pkt, mpdu->GetHeader());
+    return pkt;
 }
 
 // --- packet reordering (#212) ----------------------------------------------
@@ -277,7 +375,8 @@ std::map<Address, std::vector<double>> g_rxArrival;
 // SeqTsSizeHeader already carries the send timestamp, and the trace below
 // already peeks the header for the sequence number, so this costs one
 // subtraction per delivered packet and no extra instrumentation.
-std::map<Address, std::map<uint32_t, double>> g_rxDelayBySeq;
+// #96: dense per flow (SeqBook), the harness's sequence numbers being dense.
+std::map<Address, SeqBook<double>> g_rxDelayBySeq;
 
 // #308 phase 2: (flow, seq) -> hop count, the same key as the delays above.
 //
@@ -291,12 +390,18 @@ std::map<Address, std::map<uint32_t, double>> g_rxDelayBySeq;
 //
 // Filled by CountDeliveredHops below rather than here, because the hop count
 // comes from the IP TTL and the sink's Rx trace has no IP header left to read.
-std::map<Address, std::map<uint32_t, uint32_t>> g_rxHopsBySeq;
+std::map<Address, SeqBook<uint32_t>> g_rxHopsBySeq;
 
 // #386: (flow, seq) -> number of sink deliveries seen so far. Same key as the
 // two maps above; filled by RecordRxSeq, read by the re-injection identity
 // block further down (see "re-injection identity & fate").
-std::map<Address, std::map<uint32_t, uint32_t>> g_rxCount;
+std::map<Address, SeqBook<uint32_t>> g_rxCount;
+
+// Deliveries of (flow, seq) so far; 0 for a key never delivered.
+uint32_t RxCountOf(const Address& flow, uint32_t seq) {
+    const auto f = g_rxCount.find(flow);
+    return f != g_rxCount.end() && f->second.Has(seq) ? f->second.value[seq] : 0;
+}
 
 // --- route stability (#294 item 4) -------------------------------------------
 // The path a delivered packet took: the node IDs that handed it to a real
@@ -333,7 +438,7 @@ void RecordRxSeq(Ptr<const Packet> p, const Address& from) {
     // duplicate deliveries at end of run. Kept for ALL protocols (this callback
     // has no protocol knowledge): one uint32 per delivered (flow, seq), the
     // same growth order as g_rxDelayBySeq's double above — accepted.
-    g_rxCount[from][h.GetSeq()] += 1;
+    g_rxCount[from][h.GetSeq()] += 1;  // a new SeqBook slot starts at 0
 }
 
 // --- drop-cause breakdown (#215) --------------------------------------------
@@ -365,29 +470,10 @@ uint64_t g_macDataDrops = 0;  // data frames dropped at the MAC retry limit
 uint64_t g_ackedDataHops = 0;
 
 // Is this a CBR *data* IP packet (as opposed to routing control)? Same test as
-// CountControlTx, from the other side.
+// CountControlTx, from the other side (ClassifyIp, #96; #454: a continuation
+// fragment is by construction not data).
 bool IsDataIp(Ptr<const Packet> p) {
-    Ptr<Packet> c = p->Copy();
-    Ipv4Header ip;
-    if (c->RemoveHeader(ip) == 0) return false;
-    // #454: a continuation fragment (offset > 0) carries no L4 header to peek
-    // a port from, and no data packet ever fragments (UDP data is a 92 B IP
-    // packet, TCP segments cap at the 536 B default MSS, both far under the
-    // 2296 B wifi MTU) — so a continuation fragment is by construction not
-    // data. Classifying by port stays first-fragment-only.
-    if (ip.GetFragmentOffset() != 0) return false;
-    if (ip.GetProtocol() == 6) {  // TCP (#389)
-        // Pure TCP ACKs are excluded naturally: on the reverse path the
-        // destination port is the sender's ephemeral port, so only forward
-        // data segments count — matching what the UDP arm counts.
-        TcpHeader tcp;
-        if (c->PeekHeader(tcp) == 0) return false;
-        return tcp.GetDestinationPort() == kDataPort;
-    }
-    if (ip.GetProtocol() != 17) return false;  // not UDP
-    UdpHeader udp;
-    if (c->PeekHeader(udp) == 0) return false;
-    return udp.GetDestinationPort() == kDataPort;
+    return ClassifyIp(p).data;
 }
 
 // --- re-injection identity & fate (#386) -------------------------------------
@@ -463,35 +549,28 @@ uint64_t g_reinjSkips = 0;  // MacReinjectSkip trace fires (incl. unparsed)
 // MacReinject listener classifies those (unparsedIcmp/unparsedOther), and
 // scenario_check FAILs only when parsed + unparsed != events — the books must
 // close, but a non-data re-injection is a finding, not an error.
-bool ReinjKeyFromUdp(const Ipv4Header& ip, Ptr<const Packet> p, Address& flow, uint32_t& seq) {
-    if (ip.GetProtocol() != 17) return false;
-    // #454: a continuation fragment's payload does not start with a UDP
-    // header, so there is no (flow, seq) key to parse off it — and data never
-    // fragments here (see IsDataIp), so it cannot be a SeqTs CBR datagram.
-    // Callers that must close their books (CountMacReinject) classify the
-    // false return like any other non-data payload.
-    if (ip.GetFragmentOffset() != 0) return false;
-    Ptr<Packet> c = p->Copy();
-    UdpHeader udp;
-    if (c->RemoveHeader(udp) == 0) return false;
-    if (udp.GetDestinationPort() != kDataPort) return false;
-    SeqTsSizeHeader h;
-    if (c->PeekHeader(h) == 0) return false;
-    flow = InetSocketAddress(ip.GetSource(), udp.GetSourcePort());
-    seq = h.GetSeq();
+// #454: a continuation fragment's payload does not start with a UDP header,
+// so there is no (flow, seq) key to parse off it — and data never fragments
+// here (see IpClass), so it cannot be a SeqTs CBR datagram. Callers that must
+// close their books (CountMacReinject) classify the false return like any
+// other non-data payload.
+bool KeyOf(const IpClass& c, Address& flow, uint32_t& seq) {
+    if (!c.keyed) return false;
+    flow = c.Flow();
+    seq = c.seq;
     return true;
+}
+bool ReinjKeyFromUdp(const Ipv4Header& ip, Ptr<const Packet> p, Address& flow, uint32_t& seq) {
+    return KeyOf(ClassifyL4Packet(ip, p), flow, seq);
 }
 
 // Same key off a full IP packet (the Ipv4L3Protocol "Tx"/"Rx" trace form).
 bool ReinjKeyFromIp(Ptr<const Packet> p, Address& flow, uint32_t& seq) {
-    Ptr<Packet> c = p->Copy();
-    Ipv4Header ip;
-    if (c->RemoveHeader(ip) == 0) return false;
-    return ReinjKeyFromUdp(ip, c, flow, seq);
+    return KeyOf(ClassifyIp(p), flow, seq);
 }
 
 // Connected to the adapter's "MacReinject" trace (anthocnet + UDP arm only).
-// Read-only: the packet is peeked via a Copy, never mutated — the pre-merge
+// Read-only: the packet's bytes are read (#96: CopyData), never mutated — the pre-merge
 // A/B relies on this whole block being behaviour-invariant.
 void CountMacReinject(const Ipv4Header& ip, Ptr<const Packet> p) {
     ++g_reinjEvents;
@@ -507,12 +586,7 @@ void CountMacReinject(const Ipv4Header& ip, Ptr<const Packet> p) {
         return;
     }
     ++g_reinjParsed;
-    uint32_t rxNow = 0;
-    const auto f = g_rxCount.find(flow);
-    if (f != g_rxCount.end()) {
-        const auto s = f->second.find(seq);
-        if (s != f->second.end()) rxNow = s->second;
-    }
+    const uint32_t rxNow = RxCountOf(flow, seq);
     if (rxNow > 0) ++g_reinjOfDelivered;
     auto ins = g_reinj.emplace(std::make_pair(flow, seq), ReinjInfo{});
     if (ins.second) ins.first->second.rxAtFirstReinj = rxNow;
@@ -530,12 +604,7 @@ void CountMacReinjectSkip(const Ipv4Header& ip, Ptr<const Packet> p) {
     Address flow;
     uint32_t seq = 0;
     if (!ReinjKeyFromUdp(ip, p, flow, seq)) return;
-    uint32_t rxNow = 0;
-    const auto f = g_rxCount.find(flow);
-    if (f != g_rxCount.end()) {
-        const auto s = f->second.find(seq);
-        if (s != f->second.end()) rxNow = s->second;
-    }
+    const uint32_t rxNow = RxCountOf(flow, seq);
     auto ins = g_reinjSkip.emplace(std::make_pair(flow, seq), ReinjSkipInfo{});
     if (ins.second) ins.first->second.rxAtFirstSkip = rxNow;
     ++ins.first->second.events;
@@ -641,46 +710,45 @@ void CountFateL3Drop(const Ipv4Header& ip, Ptr<const Packet> p, Ipv4L3Protocol::
     FateMark(flow, seq, f);
 }
 
-void CountDataHopTx(Ptr<const Packet> p, Ptr<Ipv4> ipv4, uint32_t iface) {
-    if (iface != 0 && IsDataIp(p)) {
+void CountDataHopTx(const IpClass& c, Ptr<Ipv4> ipv4, uint32_t iface) {
+    if (iface != 0 && c.data) {
         ++g_dataHopTx;
+        if (!c.keyed) return;  // TCP: no (flow, seq) for the books below
+        const Address flow = c.Flow();
         // #294 item 4: this node is on the packet's path. On the hwmp arm IP
         // transmits only at the source; the path is built from the mesh's
         // own hops in CountMeshDataHop instead (#708).
         if (g_routeOn && !g_meshArm) {
-            Address flow;
-            uint32_t seq = 0;
-            if (ReinjKeyFromIp(p, flow, seq)) {
-                g_routePending[flow][seq].push_back(ipv4->GetObject<Node>()->GetId());
-            }
+            g_routePending[flow][c.seq].push_back(ipv4->GetObject<Node>()->GetId());
         }
         // #386: subsequent hops of re-injected packets. g_reinj only fills on
-        // the anthocnet arm (the trace is connected nowhere else), so the
-        // emptiness gate keeps the extra parse off every other arm.
+        // the anthocnet arm (the trace is connected nowhere else).
         if (!g_reinj.empty()) {
-            Address flow;
-            uint32_t seq = 0;
-            if (ReinjKeyFromIp(p, flow, seq)) {
-                const auto it = g_reinj.find(std::make_pair(flow, seq));
-                if (it != g_reinj.end()) ++it->second.postTx;
-            }
+            const auto it = g_reinj.find(std::make_pair(flow, c.seq));
+            if (it != g_reinj.end()) ++it->second.postTx;
         }
-        if (g_fateOn) FateMarkIp(p, Fate::Tx);  // #761
+        if (g_fateOn) FateMark(flow, c.seq, Fate::Tx);  // #761
     }
 }
 void CountDataHopRx(Ptr<const Packet> p, Ptr<Ipv4>, uint32_t iface) {
-    if (iface != 0 && IsDataIp(p)) {
-        ++g_dataHopRx;
-        if (!g_reinj.empty()) {  // #386: see CountDataHopTx
-            Address flow;
-            uint32_t seq = 0;
-            if (ReinjKeyFromIp(p, flow, seq)) {
-                const auto it = g_reinj.find(std::make_pair(flow, seq));
-                if (it != g_reinj.end()) ++it->second.postRx;
-            }
-        }
-        if (g_fateOn) FateMarkIp(p, Fate::AtNode);  // #761
+    if (iface == 0) return;
+    const IpClass c = ClassifyIp(p);  // #96: one parse for every book below
+    if (!c.data) return;
+    ++g_dataHopRx;
+    if (!c.keyed) return;
+    if (!g_reinj.empty()) {  // #386: see CountDataHopTx
+        const auto it = g_reinj.find(std::make_pair(c.Flow(), c.seq));
+        if (it != g_reinj.end()) ++it->second.postRx;
     }
+    if (g_fateOn) FateMark(c.Flow(), c.seq, Fate::AtNode);  // #761
+}
+
+// #96: the one Ipv4L3Protocol "Tx" callback the harness connects: the control
+// count and the data-hop books, from one parse of the packet.
+void CountL3Tx(Ptr<const Packet> p, Ptr<Ipv4> ipv4, uint32_t iface) {
+    const IpClass c = ClassifyIp(p);
+    CountControlTx(c, p);
+    CountDataHopTx(c, ipv4, iface);
 }
 
 // WifiMac "DroppedMpdu": a retry-limit drop is the MAC giving up on a unicast,
@@ -694,28 +762,20 @@ void CountDataHopRx(Ptr<const Packet> p, Ptr<Ipv4>, uint32_t iface) {
 uint64_t g_adaptiveReinjData = 0;
 uint64_t g_adaptiveArpReinjData = 0;
 void CountAdaptiveReinject(const Ipv4Header& ip, Ptr<const Packet> p) {
-    Ptr<Packet> c = p->Copy();
-    c->AddHeader(ip);
-    if (IsDataIp(c)) ++g_adaptiveReinjData;
-    if (g_fateOn) FateRecovered(ip, p);  // #761
+    if (ClassifyL4Packet(ip, p).data) ++g_adaptiveReinjData;  // #96: no Copy + AddHeader
+    if (g_fateOn) FateRecovered(ip, p);                        // #761
 }
 void CountAdaptiveArpReinject(const Ipv4Header& ip, Ptr<const Packet> p) {
-    Ptr<Packet> c = p->Copy();
-    c->AddHeader(ip);
-    if (IsDataIp(c)) ++g_adaptiveArpReinjData;
+    if (ClassifyL4Packet(ip, p).data) ++g_adaptiveArpReinjData;
     if (g_fateOn) FateRecovered(ip, p);  // #761
 }
 
 void CountMacDataDrop(WifiMacDropReason reason, Ptr<const BENCH_WIFI_MPDU> mpdu) {
     if (reason != WIFI_MAC_DROP_REACHED_RETRY_LIMIT || !mpdu) return;
-    Ptr<Packet> pkt = mpdu->GetPacket()->Copy();
-    StripMeshHeader(pkt, mpdu->GetHeader());  // #708
-    LlcSnapHeader llc;
-    if (pkt->GetSize() < llc.GetSerializedSize()) return;
-    pkt->RemoveHeader(llc);
-    if (llc.GetType() != 0x0800) return;  // not IPv4
-    if (IsDataIp(pkt)) ++g_macDataDrops;
-    if (g_fateOn) FateMarkIp(pkt, Fate::Mac);  // #761
+    // #96: one parse for both books; #708: the mesh header stripped first.
+    const IpClass c = ClassifyLlc(FrameBody(mpdu));
+    if (c.data) ++g_macDataDrops;
+    if (g_fateOn && c.keyed) FateMark(c.Flow(), c.seq, Fate::Mac);  // #761
 }
 
 // --- #229: routing-layer pending-queue conservation (dsdv + aodv arms only) --
@@ -1119,32 +1179,15 @@ void FlushDiversityWindow() {
 
 void CountAckedDataHop(uint32_t node, Ptr<const BENCH_WIFI_MPDU> mpdu) {
     if (!mpdu) return;
-    Ptr<Packet> pkt = mpdu->GetPacket()->Copy();
-    StripMeshHeader(pkt, mpdu->GetHeader());  // #708
-    LlcSnapHeader llc;
-    if (pkt->GetSize() < llc.GetSerializedSize()) return;
-    pkt->RemoveHeader(llc);
-    if (llc.GetType() != 0x0800) return;  // not IPv4
-    Ipv4Header ip;
-    if (pkt->RemoveHeader(ip) == 0) return;
-    // #454: a fragment crosses the MAC as its own frame, so a continuation
-    // fragment (offset > 0, no L4 header to peek) can land here too. Data
-    // never fragments (see IsDataIp), so it is never a data hop.
-    if (ip.GetFragmentOffset() != 0) return;
-    // Data only: routing control is exactly what must NOT count as a used path.
-    // Routing control here is UDP, so a data-port TCP segment is by
-    // construction never control (#389).
-    if (ip.GetProtocol() == 6) {  // TCP
-        TcpHeader tcp;
-        if (pkt->PeekHeader(tcp) == 0) return;
-        if (tcp.GetDestinationPort() != kDataPort) return;
-    } else if (ip.GetProtocol() == 17) {  // UDP
-        UdpHeader udp;
-        if (pkt->PeekHeader(udp) == 0) return;
-        if (udp.GetDestinationPort() != kDataPort) return;
-    } else {
-        return;  // neither UDP nor TCP
-    }
+    // #96: read once off the frame body (#708: mesh header stripped). Not
+    // IPv4, or not data: nothing to count. #454: a fragment crosses the MAC
+    // as its own frame, so a continuation fragment (offset > 0, no L4 header
+    // to peek) can land here too; data never fragments (see IpClass), so it
+    // is never a data hop. Data only: routing control is exactly what must
+    // NOT count as a used path. Routing control here is UDP, so a data-port
+    // TCP segment is by construction never control (#389).
+    const IpClass c = ClassifyLlc(FrameBody(mpdu));
+    if (!c.data) return;
     ++g_ackedDataHops;  // #377
     const uint64_t window = static_cast<uint64_t>(Simulator::Now().GetSeconds() / g_pathWindowS);
     if (window != g_divWindow) {
@@ -1155,7 +1198,7 @@ void CountAckedDataHop(uint32_t node, Ptr<const BENCH_WIFI_MPDU> mpdu) {
     mpdu->GetHeader().GetAddr1().CopyTo(mac);
     uint64_t nextHop = 0;
     for (int i = 0; i < 6; ++i) nextHop = (nextHop << 8) | mac[i];
-    g_divCur[std::make_pair(node, ip.GetDestination().Get())][nextHop] += 1;
+    g_divCur[std::make_pair(node, c.dst.Get())][nextHop] += 1;
 }
 
 // #708: the hwmp arm's path. IP never sees the mesh's relays, so the path is
@@ -1165,17 +1208,8 @@ void CountAckedDataHop(uint32_t node, Ptr<const BENCH_WIFI_MPDU> mpdu) {
 // when the destination delivers (the last hop's ack arrives after that).
 void CountMeshDataHop(uint32_t node, Ptr<const BENCH_WIFI_MPDU> mpdu) {
     if (!g_routeOn || !mpdu || !mpdu->GetHeader().IsData()) return;
-    Ptr<Packet> pkt = mpdu->GetPacket()->Copy();
-    StripMeshHeader(pkt, mpdu->GetHeader());
-    LlcSnapHeader llc;
-    if (pkt->GetSize() < llc.GetSerializedSize()) return;
-    pkt->RemoveHeader(llc);
-    if (llc.GetType() != 0x0800) return;
-    Ipv4Header ip;
-    if (pkt->RemoveHeader(ip) == 0) return;
-    Address flow;
-    uint32_t seq = 0;
-    if (ReinjKeyFromUdp(ip, pkt, flow, seq)) g_routePending[flow][seq].push_back(node);
+    const IpClass c = ClassifyLlc(FrameBody(mpdu));  // #96
+    if (c.keyed) g_routePending[c.Flow()][c.seq].push_back(node);
 }
 
 // Ipv4L3Protocol "LocalDeliver": one call per packet handed to the local
@@ -1186,34 +1220,19 @@ void CountMeshDataHop(uint32_t node, Ptr<const BENCH_WIFI_MPDU> mpdu) {
 // with the offset reset to 0 — so the L4 peeks below need no fragment guard.
 void CountDeliveredHops(const Ipv4Header& ip, Ptr<const Packet> p, uint32_t) {
     const bool isTcp = ip.GetProtocol() == 6;  // #389: TCP data counts here too
-    UdpHeader udp;
-    if (isTcp) {
-        TcpHeader tcp;
-        if (p->PeekHeader(tcp) == 0) return;
-        if (tcp.GetDestinationPort() != kDataPort) return;
-    } else {
-        if (ip.GetProtocol() != 17) return;
-        if (p->PeekHeader(udp) == 0) return;
-        if (udp.GetDestinationPort() != kDataPort) return;
-    }
+    const IpClass c = ClassifyL4Packet(ip, p);  // #96: one parse, no Copy()
+    if (!c.data) return;
     const uint8_t ttl = ip.GetTtl();
     uint32_t hops = ttl < kIpDefaultTtl ? static_cast<uint32_t>(kIpDefaultTtl - ttl) + 1u : 1u;
     // #708: the IP TTL of an 802.11s mesh reads one hop whatever the path, so
     // the hwmp arm counts the mesh hops CountMeshDataHop recorded for this
     // packet (UDP only, like the path itself).
-    if (g_meshArm && !isTcp) {
-        Ptr<Packet> b = p->Copy();
-        UdpHeader u;
-        b->RemoveHeader(u);
-        SeqTsSizeHeader st;
-        if (b->PeekHeader(st) != 0) {
-            const auto f =
-                g_routePending.find(InetSocketAddress(ip.GetSource(), u.GetSourcePort()));
-            if (f != g_routePending.end()) {
-                const auto it = f->second.find(st.GetSeq());
-                if (it != f->second.end() && !it->second.empty()) {
-                    hops = static_cast<uint32_t>(it->second.size());
-                }
+    if (g_meshArm && c.keyed) {
+        const auto f = g_routePending.find(c.Flow());
+        if (f != g_routePending.end()) {
+            const auto it = f->second.find(c.seq);
+            if (it != f->second.end() && !it->second.empty()) {
+                hops = static_cast<uint32_t>(it->second.size());
             }
         }
     }
@@ -1235,25 +1254,22 @@ void CountDeliveredHops(const Ipv4Header& ip, Ptr<const Packet> p, uint32_t) {
     // available here. If that ever stopped matching, hopsCommon would read zero
     // while PDR stayed positive, which scenario_check.py results treats as a
     // FAIL rather than as "no hop data" (the #229/#230 rule).
-    Ptr<Packet> body = p->Copy();
-    body->RemoveHeader(udp);
-    SeqTsSizeHeader seqTs;
-    if (body->PeekHeader(seqTs) == 0) return;
-    const Address flow = InetSocketAddress(ip.GetSource(), udp.GetSourcePort());
-    g_rxHopsBySeq[flow][seqTs.GetSeq()] = hops;
+    if (!c.keyed) return;
+    const Address flow = c.Flow();
+    g_rxHopsBySeq[flow][c.seq] = hops;
 
     // #294 item 4: close this packet's path on its FIRST delivery. A duplicate
     // (#386 re-injection) finds no pending entry, or a fresh one that only
     // holds the copy's later hops, and is ignored either way.
     if (!g_routeOn) return;
-    const uint32_t seq = seqTs.GetSeq();
+    const uint32_t seq = c.seq;
     auto& pend = g_routePending[flow];
     auto& rx = g_routeRx[flow];
     const auto it = pend.find(seq);
     if (it != pend.end() && rx.find(seq) == rx.end()) {
         g_routeHopSum += it->second.size();
         const auto id = g_routeIds.emplace(it->second, static_cast<uint32_t>(g_routeIds.size()));
-        rx[seq] = RouteRx{id.first->second, seqTs.GetTs().GetSeconds()};
+        rx[seq] = RouteRx{id.first->second, TimeStep(c.ts).GetSeconds()};
     }
     if (it != pend.end()) pend.erase(it);
     if (seq > kRouteWindowSeq) {
@@ -1480,6 +1496,24 @@ private:
     }
     NodeContainer m_nodes;
 };
+
+// #96: the per-packet books are freed when their run ends, not held until the
+// next run clears them; RunOne's Result owns the two the common set needs.
+void ReleasePacketBooks() {
+    g_rxSeq.clear();
+    g_rxArrival.clear();
+    g_rxDelayBySeq.clear();
+    g_rxHopsBySeq.clear();
+    g_rxCount.clear();
+    g_routePending.clear();
+    g_routeIds.clear();
+    g_routeRx.clear();
+    g_reinj.clear();
+    g_reinjSkip.clear();
+    g_pqPending.clear();
+    g_fate.clear();
+    g_divCur.clear();
+}
 
 Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
     // Reset the RNG run so every protocol sees the identical realisation.
@@ -1962,12 +1996,12 @@ Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
     // RunOne calls in one process can't cross-wire.
     for (uint32_t i = 0; i < nodes.GetN(); ++i) {
         Ptr<Ipv4L3Protocol> l3 = nodes.Get(i)->GetObject<Ipv4L3Protocol>();
-        if (l3) l3->TraceConnectWithoutContext("Tx", MakeCallback(&CountControlTx));
         // #215: the same IP-layer hook, counting *data* hops in and out, plus
         // the MAC's own retry-limit verdict. Connected per protocol arm, so the
         // causes are measured identically for anthocnet, aodv, olsr and dsdv.
+        // #96: control and data hops share one "Tx" callback, one parse.
         if (l3) {
-            l3->TraceConnectWithoutContext("Tx", MakeCallback(&CountDataHopTx));
+            l3->TraceConnectWithoutContext("Tx", MakeCallback(&CountL3Tx));
             l3->TraceConnectWithoutContext("Rx", MakeCallback(&CountDataHopRx));
             // #217 path length: TTL of every locally delivered data packet.
             l3->TraceConnectWithoutContext("LocalDeliver", MakeCallback(&CountDeliveredHops));
@@ -2443,8 +2477,8 @@ Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
     // protocol's data, so they are computed after the whole grid exists.
     r.delayHist = delayBins;
     r.delayBinWidth = binWidth;
-    r.rxDelayBySeq = g_rxDelayBySeq;
-    r.rxHopsBySeq = g_rxHopsBySeq;
+    r.rxDelayBySeq = std::move(g_rxDelayBySeq);  // #96: moved; the books are
+    r.rxHopsBySeq = std::move(g_rxHopsBySeq);    // not read after this point
 
     // #57 offered-load delay percentiles: the q-th percentile over *sent*
     // packets, treating undelivered as infinite delay. Monotone-honest — a
@@ -2669,12 +2703,7 @@ Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
                  skipsDelivEvents = 0;
         for (const auto& kv : g_reinjSkip) {
             ++skipsPkts;
-            uint32_t endCount = 0;
-            const auto f = g_rxCount.find(kv.first.first);
-            if (f != g_rxCount.end()) {
-                const auto s = f->second.find(kv.first.second);
-                if (s != f->second.end()) endCount = s->second;
-            }
+            const uint32_t endCount = RxCountOf(kv.first.first, kv.first.second);
             if (kv.second.rxAtFirstSkip >= 1)
                 ++skipsDelivBefore;
             else if (endCount >= 1)
@@ -2822,11 +2851,12 @@ Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
                  fRecoveredPkts = 0;
         int64_t fUnseen = 0;
         if (g_fateOn) {
-            for (const auto& kv : g_rxCount) fDelivered += kv.second.size();
+            for (const auto& kv : g_rxCount)
+                fDelivered += static_cast<uint64_t>(
+                    std::count(kv.second.has.begin(), kv.second.has.end(), 1));
             for (const auto& kv : g_fate) {
                 if (kv.second.recovered) ++fRecoveredPkts;
-                const auto f = g_rxCount.find(kv.first.first);
-                if (f != g_rxCount.end() && f->second.count(kv.first.second)) continue;
+                if (RxCountOf(kv.first.first, kv.first.second) > 0) continue;
                 switch (kv.second.last) {
                     case Fate::Mac:
                         ++fMac;
@@ -2923,12 +2953,7 @@ Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
             uint64_t l3Route = 0, l3Ttl = 0, l3Other = 0;
             for (const auto& kv : g_reinj) {
                 ++pkts;
-                uint32_t endCount = 0;
-                const auto f = g_rxCount.find(kv.first.first);
-                if (f != g_rxCount.end()) {
-                    const auto s = f->second.find(kv.first.second);
-                    if (s != f->second.end()) endCount = s->second;
-                }
+                const uint32_t endCount = RxCountOf(kv.first.first, kv.first.second);
                 if (kv.second.rxAtFirstReinj >= 1)
                     ++delivBefore;
                 else if (endCount >= 1)
@@ -3100,6 +3125,7 @@ Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
     // ns3-tools#91: read before Destroy, which resets the count.
     r.events = Simulator::GetEventCount();
     Simulator::Destroy();
+    ReleasePacketBooks();  // #96
     return r;
 }
 
