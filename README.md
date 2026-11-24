@@ -19,6 +19,13 @@ campaign driver `ns3-campaign`, and, planned, non-intrusive probes as their
 own module (#40). **Status:** v1.0.0 is released; it declares today's CLI and marker
 contract v1 stable ([docs/markers.md](docs/markers.md) "Stability").
 
+**Moving from `ns3-tools` (PyPI, v1.1.0 to v1.1.2) to `swarm-sim-tools`:**
+both distributions install the same `ns3_tool` package and console scripts,
+so remove the old one first: `pip uninstall ns3-tools && pip install
+swarm-sim-tools`. If both are already installed, run `pip uninstall
+ns3-tools` and then `pip install --force-reinstall swarm-sim-tools`, since
+uninstalling `ns3-tools` deletes files the new distribution shares.
+
 What each release must show, and what blocks what: [docs/roadmap.md](docs/roadmap.md).
 
 Upstream ns-3 bugs the org found, their workarounds and their upstream status:
