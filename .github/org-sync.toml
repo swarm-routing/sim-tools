@@ -12,6 +12,9 @@ module = "routing-bench"
 dual = ["python/", "tools/"]
 ci_workflow = "ns3.yml"
 python = "3.11"
+# the org-managed backstop-tick.yml: hourly at :53, it asks swarm-routing/.github's
+# schedule backstop to run (swarm-routing/.github#748)
+backstop_tick = 53
 badges = ["ci", "release", "doi", "cite", "licence", "conventional", "arena", "rcapa", "ns3-bugs", "cxx", "ns3", "ns3dev", "python", "sonar", "codecov", "coderabbit", "bestpractices"]
 trust_boundary = """
 The `ns3-tool` readers of `##CONFIG##`/`##RUN##`/`##BENCH##`/`##DIAG##`
