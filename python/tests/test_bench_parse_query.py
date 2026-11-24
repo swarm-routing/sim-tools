@@ -16,9 +16,15 @@ They now call ``bench_parse.py --get``, so this checks two things:
 
 Run: python3 test_bench_parse_query.py   (no pytest; exits non-zero on the
                                           first failure)
+
+NS3_TOOL_INSTALLED=1: test the installed package (a wheel in a venv, #3)
+instead of the source tree: ``ns3_tool.bench_parse`` is imported, its CLI run
+as ``python -m ns3_tool.bench_parse``, and the test fails unless the module
+comes from outside this checkout's python/.
 """
 
 import glob
+import importlib
 import importlib.util
 import os
 import subprocess
@@ -48,7 +54,18 @@ def _load(name):
     return module
 
 
-bp = _load("bench_parse")
+INSTALLED = os.environ.get("NS3_TOOL_INSTALLED") == "1"
+if INSTALLED:
+    bp = importlib.import_module("ns3_tool.bench_parse")
+    _src = os.path.dirname(TESTS) + os.sep
+    if os.path.abspath(bp.__file__).startswith(_src):
+        print(f"FAIL: NS3_TOOL_INSTALLED=1 but ns3_tool comes from the source tree: {bp.__file__}")
+        sys.exit(1)
+    print(f"ok: the installed package, {bp.__file__}")
+    BP_CLI = [sys.executable, "-m", "ns3_tool.bench_parse"]
+else:
+    bp = _load("bench_parse")
+    BP_CLI = [sys.executable, os.path.join(HERE, "bench_parse.py")]
 
 
 def awk(prog, text, **var):
@@ -292,8 +309,7 @@ def test_missing_is_empty_exit_0():
         check(bp.query(ROUTING_CSV, "nosuch", field, src) == [], f"{src} missing proto")
     proc = subprocess.run(
         [
-            sys.executable,
-            os.path.join(HERE, "bench_parse.py"),
+            *BP_CLI,
             "--get",
             "pdr",
             "--from",
@@ -310,8 +326,7 @@ def test_missing_is_empty_exit_0():
     check(proc.returncode == 0 and proc.stdout == "", f"CLI missing: {proc}")
     proc = subprocess.run(
         [
-            sys.executable,
-            os.path.join(HERE, "bench_parse.py"),
+            *BP_CLI,
             "--get",
             "pdr",
             "--from",
