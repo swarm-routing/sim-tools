@@ -46,7 +46,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: swarm-routing/.github/.github/workflows/reusable-dev-image-cleanup.yml@377fb5a73ca3c6864aee726a15eeef796270e5bc # main@2026-11-23
+    uses: swarm-routing/.github/.github/workflows/reusable-dev-image-cleanup.yml@9a1ce0ffeda6916186f97b0c5a7678bcbc7578ad # main@2026-11-24
     with:
       packages: ns3-tools-dev
 
@@ -55,7 +55,7 @@ jobs:
     # (swarm-routing/.github#35, phase 1); keeps the `python-coverage` artifact.
     # tools/checks/*.py is measured too (its tests in tools/checks/tests/), so
     # SonarQube Cloud sees the coverage of the CI scripts it analyses (#249).
-    uses: swarm-routing/.github/.github/workflows/reusable-python-ci.yml@377fb5a73ca3c6864aee726a15eeef796270e5bc # main@2026-11-23
+    uses: swarm-routing/.github/.github/workflows/reusable-python-ci.yml@9a1ce0ffeda6916186f97b0c5a7678bcbc7578ad # main@2026-11-24
     with:
       paths: python tools
       tests: python/tests/test_*.py tools/checks/tests/test_*.py
@@ -69,7 +69,7 @@ jobs:
     # there must not stop the ns-3 build (the scan then warns: C++ coverage only).
     needs: python-quality
     if: ${{ !cancelled() }}
-    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@377fb5a73ca3c6864aee726a15eeef796270e5bc # main@2026-11-23
+    uses: swarm-routing/.github/.github/workflows/reusable-ns3-ci.yml@9a1ce0ffeda6916186f97b0c5a7678bcbc7578ad # main@2026-11-24
     with:
       modules: routing-bench=ns3/routing-bench
       ns3-versions: ${{ inputs.ns3-versions || '["latest"]' }}
@@ -116,7 +116,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@377fb5a73ca3c6864aee726a15eeef796270e5bc # main@2026-11-23
+    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@9a1ce0ffeda6916186f97b0c5a7678bcbc7578ad # main@2026-11-24
     with:
       flags: ns3
 
@@ -126,7 +126,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@377fb5a73ca3c6864aee726a15eeef796270e5bc # main@2026-11-23
+    uses: swarm-routing/.github/.github/workflows/reusable-codecov.yml@9a1ce0ffeda6916186f97b0c5a7678bcbc7578ad # main@2026-11-24
     with:
       artifact: python-coverage
       files: coverage.xml
@@ -146,7 +146,7 @@ jobs:
         timeout-minutes: 2  # its download and start take seconds (swarm-routing/.github#164)
         with:
           egress-policy: audit
-      - uses: swarm-routing/.github/.github/actions/changes@377fb5a73ca3c6864aee726a15eeef796270e5bc # main@2026-11-23
+      - uses: swarm-routing/.github/.github/actions/changes@9a1ce0ffeda6916186f97b0c5a7678bcbc7578ad # main@2026-11-24
         id: changes
         timeout-minutes: 2
 
