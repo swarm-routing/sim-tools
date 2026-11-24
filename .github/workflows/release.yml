@@ -8,7 +8,7 @@ name: Release
 #   dispatch `bump`     open the PR `chore(release): bump version A to B`
 #                       from bot/release (Commitizen, .cz.toml);
 #   merge that PR       the release: `make dist` builds and checks the assets
-#                       (routing-bench-<ver>.tar.gz, the ns3-tools wheel and
+#                       (routing-bench-<ver>.tar.gz, the swarm-sim-tools wheel and
 #                       sdist; tools/release/dist.sh), then SBOM, checksums,
 #                       signed provenance, the v<ver> tag and the GitHub release.
 # The `image` job then publishes ghcr.io/swarm-routing/ns3-tools:v<ver>-{optimized,debug}
@@ -16,7 +16,7 @@ name: Release
 # repository, swarm-routing/.github#370 and swarm-routing/.github#373;
 # v0.1.0 is in the frozen ns3-tools-ns3)
 # with the harness built in (CONTRIBUTING "Images"), and the `pypi` job
-# publishes the Python distribution ns3-tools to PyPI (a dry run: TestPyPI)
+# publishes the Python distribution swarm-sim-tools (ns3-tools until v1.1.2) to PyPI (a dry run: TestPyPI)
 # by trusted publishing (#196).
 # A dry run also builds and tests AntHocNet, ns3-tools' main consumer, against
 # the commit (routing-bench staged from it, its suites, routing-bench's suite
@@ -76,7 +76,7 @@ jobs:
       image: ns3-tools
       tag: ${{ needs.release.outputs.tag }}
 
-  # The Python distribution `ns3-tools` (the wheel and sdist `make dist`
+  # The Python distribution `swarm-sim-tools` (the wheel and sdist `make dist`
   # builds and checks) on PyPI by trusted publishing (OIDC, no token; #196):
   # a release to PyPI, a dry-run to TestPyPI (skip-existing, so a repeated
   # dry run of one version passes). The trusted publishers name this workflow
@@ -106,7 +106,7 @@ jobs:
       - name: The wheel and the sdist only
         run: |
           mkdir -p "$RUNNER_TEMP/pypi"
-          for f in "ns3_tools-${VER}-py3-none-any.whl" "ns3_tools-${VER}.tar.gz"; do
+          for f in "swarm_sim_tools-${VER}-py3-none-any.whl" "swarm_sim_tools-${VER}.tar.gz"; do
             test -f "$RUNNER_TEMP/rel/release/$f" || { echo "::error::$f is not in the release assets"; exit 1; }
             cp "$RUNNER_TEMP/rel/release/$f" "$RUNNER_TEMP/pypi/"
           done
