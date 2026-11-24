@@ -556,15 +556,16 @@ def roll(plan, state, mode, work, refresh=False):
 
     mode "record" (dispatch): the digest recorded in state["images"], else
     the one the tag names now, written into state (the caller saves it);
-    refresh re-resolves every tag. "peek" (plan): the recorded digest, else
-    the tag's now, not recorded; "offline" leaves an unrecorded tag. "recorded"
+    refresh re-resolves every tag. "peek" (plan, dispatch --dry-run): the
+    recorded digest (the tag's now with refresh), else the tag's now, not
+    recorded; "offline" leaves an unrecorded tag. "recorded"
     (collect, verdicts): the recorded digest only; an unrecorded tag stays.
     Prints one line per tag on stderr."""
     tags = rolling_tags(plan)
     images = state.setdefault("images", {}) if mode == "record" else state.get("images", {})
     out = {}
     for tag in tags:
-        if tag in images and not (refresh and mode == "record"):
+        if tag in images and not (refresh and mode in ("record", "peek")):
             out[tag] = images[tag]
             print(f"image {tag} = {images[tag]} (recorded in {work}/state.json)", file=sys.stderr)
             continue

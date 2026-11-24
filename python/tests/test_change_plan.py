@@ -1190,6 +1190,11 @@ def _rolling_refresh():
         work = os.path.join(d, "w")
         os.makedirs(work)
         cp.save_state(work, {"images": {TAG: ROLL2}, "pins": {"control": [SHA, ROLL2]}})
+        # the dry run previews the digest the real --no-reuse dispatch will use
+        err = dispatch(rolling_of(d), work, FakeGh(), cap=10, reuse=False, dry_run=True)
+        expect(f"image {TAG} = {ROLL1} (what the tag names now" in err
+               and cp.load_state(work)["images"] == {TAG: ROLL2}, "rolling-refresh-dry-run",
+               err)  # fmt: skip
         fake = FakeGh()
         dispatch(rolling_of(d), work, fake, cap=10, reuse=False)
         expect({b["inputs"]["image"] for _u, b in fake.dispatched} == {ROLL1}
