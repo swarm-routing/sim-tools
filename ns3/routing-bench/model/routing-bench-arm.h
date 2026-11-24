@@ -281,6 +281,29 @@ ArmRegistry& Registry();
 /// name, so two modules can never silently claim one `--protocols` token.
 void RegisterArm(const std::string& name, const std::string& summary, ArmFactory make);
 
+/// The random streams ns-3.48's WifiHelper::AssignStreams takes for one
+/// ad-hoc device on every radio the harness offers: the PHY's one and the
+/// non-QoS Txop's backoff (the constant, ARF and ideal managers draw nothing).
+/// The harness's running stream counter advances by exactly this per node on
+/// every ns-3 release, so the scenario it pins after the devices (position
+/// allocator, mobility) and the streams after it (internet stack, the arm)
+/// keep the indices they have on 3.48, whatever the release's devices take.
+/// ns-3.49 is the first that differs: its AdhocWifiMac takes two more (IBSS
+/// beacon jitter and beacon Txop; swarm-routing/AntHocNet#1222).
+constexpr int64_t kAdhocDeviceStreams = 2;
+
+/// Pin the streams of single-MAC wifi devices so their count cannot move
+/// what is pinned after them. The PHYs, station managers and Txop(s) -- what
+/// WifiHelper::AssignStreams gave an ad-hoc device up to ns-3.48, in its
+/// order -- take [stream, stream + kAdhocDeviceStreams * N) when they need
+/// exactly that many (ns-3.48 and 3.49: the 3.48 indices on both); the MAC's
+/// own streams (ns-3.49's IBSS beacon jitter and beacon Txop) come from
+/// `spill`. On a release whose PHY, managers or Txops take another count,
+/// every device stream comes from `spill` instead, so none lands on what the
+/// caller pins after the reserved range. The caller advances its counter by
+/// kAdhocDeviceStreams * N either way. Returns the streams taken from `spill`.
+int64_t AssignWifiDeviceStreams(const NetDeviceContainer& devices, int64_t stream, int64_t spill);
+
 /// Run the comparison harness over the registered arms. `program` names it
 /// in --PrintHelp (`routing-compare`, or its alias `anthocnet-compare`).
 int RunHarness(int argc, char* argv[], const std::string& program);
