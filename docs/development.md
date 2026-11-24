@@ -81,7 +81,7 @@ skips the Docker suite and the wheel check.
 | `scenario_check` verdicts equal AntHocNet's | `NS3_TOOL_CELLS=../AntHocNet/results/cells NS3_TOOL_SCENARIO_CHECK=../AntHocNet/tools/bench/scenario_check.py python3 python/tests/test_scenario_check_corpus.py` | same job |
 | change-plan verdicts equal AntHocNet's (needs PyYAML) | `NS3_TOOL_ANTHOCNET=../AntHocNet python3 python/tests/test_change_plan.py` | same job |
 | the harness suite, strict warnings as errors | `docker run --rm -v "$PWD:/src:ro" ghcr.io/swarm-routing/ns3-dev:latest-debug ns3-build-contrib --strict-warnings --test routing-bench=/src/ns3/routing-bench` | `module / ns-latest debug`, `module / ns-latest sanitized` |
-| every stock arm delivers | `docker run --rm -v "$PWD:/src:ro" ghcr.io/swarm-routing/ns3-dev:latest-debug bash -c 'ns3-build-contrib routing-bench=/src/ns3/routing-bench && bash /src/tools/checks/check-stock-arms.sh /opt/ns-3 "olsr dsdv hwmp"'` | `stock arms deliver` |
+| every stock arm delivers | `docker run --rm -v "$PWD:/src:ro" ghcr.io/swarm-routing/ns3-dev:latest-debug bash -c 'ns3-build-contrib routing-bench=/src/ns3/routing-bench && bash /src/tools/checks/check-stock-arms.sh /opt/ns-3 "aodv olsr dsdv hwmp"'` | `stock arms deliver` |
 
 The stock AODV arm is checked on the `3.48-debug` image only, because
 ns-3.49's AODV livelocks (swarm-routing/ns3-containers#35). CI also runs,
@@ -148,7 +148,7 @@ The C++ harness keeps AntHocNet's style and is not format-checked yet (the
 | `ns3.yml` | `module / ns-latest debug`, `module / ns-latest sanitized` | the harness builds with strict warnings, `test.py -s routing-bench` passes, determinism, coverage | yes |
 | `ns3.yml` | `module / headers / licence` | licence headers | yes |
 | `ns3.yml` | `python-quality / python` | ruff, the Python tests with coverage | yes |
-| `ns3.yml` | `stock arms deliver (...)` | OLSR, DSDV, HWMP (latest) and AODV (3.48) deliver; `##PERF##` lines | no |
+| `ns3.yml` | `stock arms deliver (aodv olsr dsdv hwmp on ns-latest)` | AODV (behind the ICMP guard, NS3-001), OLSR, DSDV and HWMP deliver on `latest`; `##PERF##` lines | yes |
 | `ns3.yml` | `ns3-tool scaffold builds and registers an arm` | a scaffolded arm builds beside the harness and delivers | no |
 | `ns3.yml` | `codecov`, `codecov-python` | coverage upload | no (report-only) |
 | `python.yml` | `ns3-tool tests (Python 3.11)`, `(Python 3.13)` | the self-tests, the installed console scripts | yes |
