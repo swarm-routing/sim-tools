@@ -26,6 +26,10 @@ swarm-sim-tools`. If both are already installed, run `pip uninstall
 ns3-tools` and then `pip install --force-reinstall swarm-sim-tools`, since
 uninstalling `ns3-tools` deletes files the new distribution shares.
 
+Bring your own protocol: from the released packages to a paired, gated
+comparison of a new arm against AODV, OLSR and DSDV, with a worked example:
+[docs/bring-your-own-protocol.md](docs/bring-your-own-protocol.md).
+
 What each release must show, and what blocks what: [docs/roadmap.md](docs/roadmap.md).
 
 Upstream ns-3 bugs the org found, their workarounds and their upstream status:

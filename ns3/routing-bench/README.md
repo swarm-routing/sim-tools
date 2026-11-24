@@ -243,6 +243,9 @@ The optional hooks, in the order the harness calls them, are documented in
 No published number may move: the byte-identical control on the committed
 cells was AntHocNet's
 [#769](https://github.com/swarm-routing/AntHocNet/issues/769). The user guide
-is still AntHocNet's
-[comparison-harness.md](https://github.com/swarm-routing/AntHocNet/blob/main/docs/comparison-harness.md);
-this repository's own guide is swarm-routing/ns3-tools#4.
+is [`docs/bring-your-own-protocol.md`](../../docs/bring-your-own-protocol.md)
+(swarm-routing/sim-tools#4): install, the stock arms, an arm from
+`ns3-tool scaffold`, a paired comparison and the three gates. It supersedes
+AntHocNet's
+[comparison-harness.md](https://github.com/swarm-routing/AntHocNet/blob/main/docs/comparison-harness.md)
+for anyone outside AntHocNet.
