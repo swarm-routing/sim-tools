@@ -106,7 +106,30 @@ silent re-run. `--no-reuse` dispatches every cell. Collected cells are kept in
 the cache, ~/.cache/ns3-campaign/<key>/ (NS3_CAMPAIGN_CACHE overrides it;
 bounded to NS3_CAMPAIGN_CACHE_MB, default 1024, least recently used out
 first), so a repeated `collect` works offline. `plan` and `status` print
-"N cells, M reusable, K to run" (runner-minute estimates are #95).
+"N cells, M reusable, K to run".
+
+Cost (#95, cost.py): `collect` appends every cell's ##PERF## rows, with the
+nNodes and time of its ##CONFIG##, to a sample store,
+~/.cache/ns3-campaign/perf.jsonl (NS3_CAMPAIGN_PERF overrides it; the newest
+NS3_CAMPAIGN_PERF_MAX lines, default 20000, are kept), and for each run it
+dispatched one overhead sample: the run's duration minus its ##PERF## wall
+times (image pull, setup, upload). From those samples, and a cost.py seed
+table when one ships, `plan` prints on stderr, only when a sample exists,
+per arm and in total: the cells, the reusable ones (free), the estimated
+runner-minutes and the elapsed time at `cap` (a job runs its arms and seeds
+one after another, plus the median overhead; elapsed is a longest-first
+schedule on `cap` free runners). Each arm's wall time per run is fitted as
+a + b * (nNodes^k * time); an arm without samples gets the slowest known
+arm's as a stated upper bound (<=), and with no samples the estimate is
+unknown. A budget, `dispatch --budget-minutes N` or the plan's optional
+
+    budget_minutes = 600                  # dispatch refuses a larger estimate
+
+turns on the guard: `dispatch` estimates the cells not yet dispatched or
+reused and, before sending any, refuses one over the budget or unknown,
+printing the breakdown, unless `--yes-over-budget` is given. Without a
+budget there is no guard. Cells found reusable during that same `dispatch`
+are not subtracted: the guard reads an upper bound.
 """
 
 import argparse
@@ -127,10 +150,11 @@ import urllib.request
 import zipfile
 
 try:  # as the ns3_tool package, or as a script beside its siblings
-    from . import bench_parse, change_plan
+    from . import bench_parse, change_plan, cost
 except ImportError:
     import bench_parse
     import change_plan
+    import cost
 
 REPO = os.environ.get("NS3_TOOL_REPO", "swarm-routing/ns3-tools")
 GIT = os.environ.get("NS3_TOOL_GIT", "https://github.com")  # where `stage` clones from
@@ -158,6 +182,7 @@ RESERVED = ("--runs", "--firstRun", "--protocols")
 KEYS = {
     "name", "base", "program", "harness", "arms", "reference", "seeds",
     "first_seed", "cap", "modules", "suites", "install", "cells",
+    "budget_minutes",
 }  # fmt: skip
 
 
@@ -206,6 +231,9 @@ def validate(plan):
     cap = plan.get("cap", 12)
     if not isinstance(cap, int) or not 1 <= cap <= 20:
         errs.append(f"cap {cap}: 1..20 (the account runs 20 jobs; leave PR CI some)")
+    budget = plan.get("budget_minutes", 1)
+    if isinstance(budget, bool) or not isinstance(budget, (int, float)) or budget <= 0:
+        errs.append(f"budget_minutes {budget}: runner-minutes > 0 (#95)")
     specs = plan["modules"] if isinstance(plan["modules"], list) else []
     if not specs:
         errs.append("modules: a list of name=owner/repo@<commit>[:subdir]")
@@ -697,6 +725,59 @@ def find_reuse(plan, state, work, label, args, key, benchmarks=None, verify=True
     return source, text
 
 
+# --- cost (#95) -----------------------------------------------------------------
+
+
+def cost_lines(plan, todo):
+    """(estimate lines, total runner-minutes or None) of the jobs `todo`
+    [(label, args, reusable)], or (None, None) when no sample exists."""
+    samples = cost.read_samples(cost.store_path(CACHE), cost.SEED_TABLE)
+    if not samples:
+        return None, None
+    fitted = cost.fits(samples)
+    over, nover = cost.overhead(samples)
+    rows = []
+    for label, args, reusable in todo:
+        p = parameters(args)
+        rows.append((label, p.get("nNodes"), p.get("time"), p["runs"], reusable))
+    est = cost.estimate(rows, plan["arms"], fitted, over, plan["cap"], plan["program"])
+    lines = cost.report(est, plan["cap"], fitted, plan["program"], nover=nover)
+    return lines, est["total"]["minutes"]
+
+
+def run_seconds(rid):
+    """A run's duration (updated_at - run_started_at), or None if it cannot be read."""
+    try:
+        r = json.loads(gh(f"repos/{REPO}/actions/runs/{rid}"))
+        start = datetime.datetime.fromisoformat(r["run_started_at"])
+        end = datetime.datetime.fromisoformat(r["updated_at"])
+    except (RuntimeError, KeyError, TypeError, ValueError):
+        return None
+    return (end - start).total_seconds()
+
+
+def record_samples(plan, texts):
+    """Append the collected cells' ##PERF## samples and each dispatched run's
+    overhead to the store; a store that cannot be written only warns."""
+    new = []
+    for rid, text, dispatched in texts:
+        src = f"run:{rid}" if dispatched else str(rid)  # a reused cell's rid is its source
+        new += cost.samples_of_text(text, "optimized", plan["program"], src)
+        secs = run_seconds(rid) if dispatched else None
+        if secs is not None:
+            over = cost.overhead_sample(rid, secs, text)
+            if over:
+                new.append(over)
+    path = cost.store_path(CACHE)
+    try:
+        n = cost.append_samples(path, new)
+    except OSError as e:
+        print(f"cost samples not recorded: {e}", file=sys.stderr)
+        return
+    if n:
+        print(f"recorded {n} cost sample(s) in {path}", file=sys.stderr)
+
+
 # --- commands -------------------------------------------------------------------
 
 
@@ -712,17 +793,19 @@ def cmd_plan(plan, a):
         how = "install" if m["name"] in plan["install"] else "dependency"
         sub = f":{m['subdir']}" if m["subdir"] else ""
         print(f"module\t{m['name']}\t{m['repo']}@{m['commit']}{sub}\t{how}")
-    reusable = 0
+    reusable, todo = 0, []
     for label, _cell, args in jobs(plan):
         key = job_key(plan, state, args)
-        if (
+        hit = (
             key
             and a.reuse
             and find_reuse(
                 plan, state, work_dir(plan, a), label, args, key, a.benchmarks, verify=False
             )
-        ):
+        )
+        if hit:
             reusable += 1
+        todo.append((label, args, bool(hit)))
         print(f"{plan['name']}/{label}\t{key or '(key after build)'}\t{plan['program']} {args}")
     n = len(jobs(plan))
     print(
@@ -731,6 +814,9 @@ def cmd_plan(plan, a):
     )
     if state.get("image"):
         print(f"{n} cells, {reusable} reusable, {n - reusable} to run", file=sys.stderr)
+    lines, _total = cost_lines(plan, todo)  # only when a sample exists (#95)
+    for line in lines or []:
+        print(line, file=sys.stderr)
 
 
 def cmd_image_inputs(plan, _a):
@@ -852,10 +938,34 @@ def cmd_dispatch(plan, a):
     state = load_state(work)
     if not state.get("image"):
         sys.exit("no campaign image yet: run `build` first")
+    done, reused = read_log(work), read_reused(work)
+    budget = a.budget_minutes if a.budget_minutes is not None else plan.get("budget_minutes")
+    if budget is not None and budget <= 0:
+        sys.exit(f"--budget-minutes {budget}: runner-minutes > 0")
+    if budget is not None:  # the guard (#95): only with a budget, before any cell is sent
+        todo = [
+            (label, args, False)
+            for label, _cell, args in jobs(plan)
+            if not (label in done or (a.reuse and label in reused))
+        ]
+        lines, total = cost_lines(plan, todo)
+        if total is None or total > budget:
+            why = (
+                f"estimated {total:.1f} runner-minutes, over the budget of {budget}"
+                if total is not None
+                else f"no estimate (unknown cost) against the budget of {budget}"
+            )
+            breakdown = "\n".join(lines or ["estimate\t(no ##PERF## samples yet)"])
+            if not a.yes_over_budget:
+                sys.exit(
+                    f"dispatch refused: {why} runner-minutes for {len(todo)} cell(s) "
+                    f"not yet dispatched or reused\n{breakdown}\n"
+                    "(--yes-over-budget dispatches anyway; reusable cells are not subtracted)"
+                )
+            print(f"over budget, dispatching anyway: {why}\n{breakdown}", file=sys.stderr)
     state.setdefault("date", datetime.datetime.now(datetime.timezone.utc).date().isoformat())
     save_state(work, state)
     cap = a.cap or plan["cap"]
-    done, reused = read_log(work), read_reused(work)
     checked = False
     for label, _cell, args in jobs(plan):
         if label in done or (a.reuse and label in reused):
@@ -1006,7 +1116,7 @@ def cmd_collect(plan, a):
     state, log = load_state(work), read_log(work)
     if not state.get("date"):
         sys.exit("nothing dispatched yet")
-    by_cell, provs, errs = {}, [], []
+    by_cell, provs, errs, texts = {}, [], [], []
     reused = read_reused(work)
     for label, cell, args in jobs(plan):
         rid = log.get(label)
@@ -1020,6 +1130,7 @@ def cmd_collect(plan, a):
                 continue
             provs.append(prov)
             by_cell.setdefault(cell, []).append((label, rid, args, text))
+            texts.append((rid, text, False))
             continue
         if not rid:
             errs.append(f"{label}: not dispatched")
@@ -1031,6 +1142,7 @@ def cmd_collect(plan, a):
             continue
         provs.append(prov)
         by_cell.setdefault(cell, []).append((label, rid, args, text))
+        texts.append((rid, text, True))
     bases = {p["base"] for p in provs}
     if len(bases) > 1:
         errs.append(f"cells name different bases: {sorted(bases)}")
@@ -1094,6 +1206,7 @@ def cmd_collect(plan, a):
         json.dump(manifest, f, indent=2)
         f.write("\n")
     print(f"wrote {run_dir}: {len(by_cell)} cell(s), manifest.json", file=sys.stderr)
+    record_samples(plan, texts)  # the cost samples (#95)
 
 
 def cmd_verdicts(plan, a):
@@ -1162,6 +1275,18 @@ def main(argv=None):
             s.add_argument("--cap", type=int)
             s.add_argument(
                 "--wait", action="store_true", help="sleep at the cap instead of exiting"
+            )
+            s.add_argument(
+                "--budget-minutes",
+                type=float,
+                metavar="N",
+                help="refuse an estimate over N runner-minutes, or an unknown one "
+                "(default: the plan's budget_minutes, else no guard; #95)",
+            )
+            s.add_argument(
+                "--yes-over-budget",
+                action="store_true",
+                help="dispatch even when the estimate is over the budget or unknown",
             )
         if name == "status":
             s.add_argument(

@@ -46,7 +46,10 @@ the same seed by nature. So:
 - no reader compares `##PERF##` between cells: `bench_parse` passes it through
   verbatim under the compare table and `--control` reads `##RUN##` only
   (`python/tests/test_perf.py` checks every fixture cell with `##PERF##` lines
-  added);
+  added); the one reader that pools it across cells is the campaign cost
+  estimate (`python/ns3_tool/cost.py`, ns3-tools#95), which predicts
+  runner-minutes for `ns3-campaign plan` and its `dispatch` budget guard and
+  never feeds a verdict;
 - the workflow-written lines `##ARGS##` and `##PROV##` are not harness output
   either: they describe how a cell was run, not what it measured.
 - the livelock watch (`--livelockEvents`, NS3-001) adds no marker and no
