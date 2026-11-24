@@ -68,13 +68,13 @@ those notes while the register's NS3-003 row was being recorded.
    [`release-sync.yml`](https://github.com/swarm-routing/swarm-routing.github.io/blob/main/.github/workflows/release-sync.yml)
    and the `pr-status` tool. A search on 2026-11-16 (`git grep -i gitlab` over
    `.github/workflows/` and `tools/` on `main` of swarm-routing/.github, the
-   site, ns3-tools, AntHocNet and ns3-containers) finds `gitlab.com` only where
+   site, ns3-tools, AntHocNet and sim-containers) finds `gitlab.com` only where
    ns-3's source is cloned or named: AntHocNet
    [`ns3-dev.yml:66`](https://github.com/swarm-routing/AntHocNet/blob/main/.github/workflows/ns3-dev.yml#L66)
    and [`bake.yml:59`](https://github.com/swarm-routing/AntHocNet/blob/main/.github/workflows/bake.yml#L59),
-   ns3-containers
-   [`tools/ns3_matrix.py:97`](https://github.com/swarm-routing/ns3-containers/blob/main/tools/ns3_matrix.py#L97),
-   and the SBOM references in `reusable-ns3-image.yml` and ns3-containers'
+   sim-containers
+   [`tools/ns3_matrix.py:97`](https://github.com/swarm-routing/sim-containers/blob/main/tools/ns3_matrix.py#L97),
+   and the SBOM references in `reusable-ns3-image.yml` and sim-containers'
    `publish-images.yml`. A stalled merge request, a competing one or an
    unanswered note therefore never reaches the record.
 5. **Why has that gap survived?** Before 2026-11-16 there was no single list of

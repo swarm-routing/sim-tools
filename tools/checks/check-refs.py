@@ -171,7 +171,7 @@ Upstream: [nsnam/ns-3-dev#1364](https://gitlab.com/nsnam/ns-3-dev/-/issues/1364)
 [nsnam/ns-3-dev!2985](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/2985).
 A link with an anchor [the register](../ns3-bugs.md#adding-a-bug), a URL
 https://example.org/page#123, an entity &#123; and an image ![x](y.png).
-`swarm-routing/ns3-containers#35` in inline code; ##RUN## markers; a heading below.
+`swarm-routing/sim-containers#35` in inline code; ##RUN## markers; a heading below.
 ## 1. Heading
 ```mermaid
 A->>B: see #843 and !12
@@ -182,7 +182,7 @@ BAD = {
     "bare #843 here": "bare #843",
     "MR !2985 merged": "bare !2985",
     "in AntHocNet#434": "write swarm-routing/AntHocNet#434",
-    "`ns3-containers#35` in code": "write swarm-routing/ns3-containers#35",
+    "`sim-containers#35` in code": "write swarm-routing/sim-containers#35",
     "[#240](https://github.com/swarm-routing/ns3-tools/issues/240)": "bare #240",
     "nsnam/ns-3-dev#1364 bare": "is a link",
     "ns-3-dev#503": "write [nsnam/ns-3-dev#503]",
