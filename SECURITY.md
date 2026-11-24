@@ -52,32 +52,40 @@ best-effort basis: expect an acknowledgement within a few days, not an SLA.
 Releases from v0.1.0 on (#26) are built, signed and published by the org's
 release workflow (`swarm-routing/.github` `reusable-release.yml`, called by
 `.github/workflows/release.yml`). Each carries `routing-bench-X.Y.Z.tar.gz`
-(the harness module, for ns-3's `contrib/`), the `ns3-tool` wheel and sdist,
-`SHA256SUMS`, a CycloneDX SBOM (`ns3-tools-X.Y.Z.cdx.json`) and signed SLSA
-build provenance for every asset (`ns3-tools-X.Y.Z.intoto.jsonl`, and the
-Sigstore bundle `ns3-tools-X.Y.Z.sigstore.json` for offline checks). The
+(the harness module, for ns-3's `contrib/`), the `ns3-tool` wheel and sdist
+(`swarm_sim_tools-X.Y.Z*` from v1.1.3 on, `ns3_tools-X.Y.Z*` for v1.1.0 to
+v1.1.2, `ns3_tool-X.Y.Z*` before),
+`SHA256SUMS`, a CycloneDX SBOM (`<name>-X.Y.Z.cdx.json`) and signed SLSA
+build provenance for every asset (`<name>-X.Y.Z.intoto.jsonl`, and the
+Sigstore bundle `<name>-X.Y.Z.sigstore.json` for offline checks), where
+`<name>` is the name the repository had when the release was built:
+`sim-tools` from v1.1.3 on, `ns3-tools` for v0.1.0 to v1.1.2 (renamed
+2026-11-22). The
 workflow runs these checks itself before it publishes, and builds the
 tarball in a clean `ns3-dev` tree and runs `test.py -s routing-bench` on it
 first, so a release that fails either never goes out. With the
 [GitHub CLI](https://cli.github.com/):
 
 ```bash
+NAME=sim-tools   # v1.1.3 on; v0.1.0 to v1.1.2: NAME=ns3-tools
 sha256sum -c SHA256SUMS --ignore-missing
-gh attestation verify routing-bench-X.Y.Z.tar.gz --repo swarm-routing/ns3-tools \
+gh attestation verify routing-bench-X.Y.Z.tar.gz --repo "swarm-routing/$NAME" \
   --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
-gh attestation verify routing-bench-X.Y.Z.tar.gz --repo swarm-routing/ns3-tools \
+gh attestation verify routing-bench-X.Y.Z.tar.gz --repo "swarm-routing/$NAME" \
   --predicate-type https://cyclonedx.org/bom \
   --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
 # offline: fetch the trusted root while online (gh attestation trusted-root > trusted_root.jsonl)
-gh attestation verify routing-bench-X.Y.Z.tar.gz --repo swarm-routing/ns3-tools \
-  --bundle ns3-tools-X.Y.Z.sigstore.json --custom-trusted-root trusted_root.jsonl \
+gh attestation verify routing-bench-X.Y.Z.tar.gz --repo "swarm-routing/$NAME" \
+  --bundle "$NAME-X.Y.Z.sigstore.json" --custom-trusted-root trusted_root.jsonl \
   --signer-workflow swarm-routing/.github/.github/workflows/reusable-release.yml
 ```
 
 The same commands verify the wheel and the sdist. The signer is the org's
 reusable workflow, not this repository, so every command names it with
-`--signer-workflow` (without it `gh` expects a workflow of `--repo`); this
-repository is in the certificate's workflow-repository extension. Each release from v0.2.0 on also publishes the image
+`--signer-workflow` (without it `gh` expects a workflow of `--repo`).
+`--repo` is the repository the release was built in, as its certificate's
+source-repository extension records it: a release built before the rename
+carries `ns3-tools` and fails against `sim-tools`, and the other way round. Each release from v0.2.0 on also publishes the image
 `ghcr.io/swarm-routing/ns3-tools:vX.Y.Z-optimized` and `-debug`, and moves the
 rolling `latest-optimized`, `latest-debug` and `latest` to them (v0.1.0:
 `ghcr.io/swarm-routing/ns3-tools-ns3`, frozen), the
