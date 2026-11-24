@@ -20,10 +20,15 @@ The steps:
 What the pieces are: `routing-bench` is an ns-3 contrib module holding the
 comparison harness, the program `routing-compare`, which builds one scenario
 per seed, runs each *arm* (a routing protocol registered with it) on it, and
-prints the results as marker lines ([markers.md](markers.md)). Your protocol
-becomes an arm by living in its own contrib module with one file,
-`helper/<module>-bench-arms.cc`
-([routing-bench README, "Registering an arm"](../ns3/routing-bench/README.md#registering-an-arm)).
+prints the results as marker lines
+([markers.md](https://github.com/swarm-routing/sim-tools/blob/v1.1.4/docs/markers.md)).
+Your protocol becomes an arm by living in its own contrib module with one
+file, `helper/<module>-bench-arms.cc` (the harness's README, "Registering an
+arm": `contrib/routing-bench/README.md` in the tarball, or
+[on GitHub](https://github.com/swarm-routing/sim-tools/blob/v1.1.4/ns3/routing-bench/README.md#registering-an-arm)).
+
+Links to this repository's files point at the v1.1.4 tag, the release the
+guide was run with. Replace `v1.1.4` in them as in the commands.
 The Python package `swarm-sim-tools` holds `ns3-tool`: `scaffold` writes that
 module, `compare` reads the marker lines into per-seed confidence intervals
 and paired verdicts.
@@ -62,13 +67,15 @@ routing-bench-1.1.4.tar.gz: OK
 - **The Python package** is `swarm-sim-tools` on PyPI (it installs the
   `ns3_tool` package and the `ns3-tool` command; from source,
   `pip install ./python`). Up to v1.1.2 the distribution was called
-  `ns3-tools`: uninstall that one first ([README](../README.md)).
+  `ns3-tools`: uninstall that one first
+  ([README](https://github.com/swarm-routing/sim-tools/blob/v1.1.4/README.md),
+  "Moving from `ns3-tools`").
 
 Keep one container running for the whole guide, with `contrib/` mounted, so
 each build is incremental:
 
 ```bash
-docker run -d --name byo -v "$PWD/contrib:/src" ghcr.io/swarm-routing/ns3-dev:latest-debug sleep infinity
+docker run -d --name byo --cpus 3 -v "$PWD/contrib:/src" ghcr.io/swarm-routing/ns3-dev:latest-debug sleep infinity
 docker exec byo ns3-build-contrib --test routing-bench=/src/routing-bench
 ```
 
@@ -78,7 +85,8 @@ ns3-build-contrib: build took 20 s (profile debug, ns-3.49; strict-warnings OFF,
 1 of 1 tests passed (1 passed, 0 skipped, 0 failed, 0 crashed, 0 valgrind errors)
 ```
 
-Limit the build's parallelism on a small machine with `docker run --cpus N`.
+`--cpus 3` is what the worked example used on a 4-CPU host (it caps the build
+and the runs); set it to your machine, or drop it.
 
 ## 2. Run the stock arms
 
@@ -107,14 +115,16 @@ off90 nrl_bytes` (PDR in %, delays in ms, throughput in kbit/s, NRL = routing
 control packets per delivered data packet). Read fields by name through the
 reader (`ns3-tool compare --get FIELD --proto ARM FILE`), never by column
 position: the marker contract only appends fields
-([markers.md](markers.md)). `routing-compare --PrintHelp` lists every option;
+([markers.md](https://github.com/swarm-routing/sim-tools/blob/v1.1.4/docs/markers.md)).
+`routing-compare --PrintHelp` lists every option;
 the ones used here are `--scenario`, `--nNodes`, `--time`, `--runs`,
 `--firstRun` and `--protocols`. The summary table under the marker lines is
 titled "AntHocNet protocol comparison", a leftover of the harness's origin; it
 holds whichever arms you listed.
 
 The `aodv` arm is stock AODV behind the ICMP no-route guard that keeps it from
-livelocking on ns-3.49 (NS3-001, [ns3-bugs.md](ns3-bugs.md)).
+livelocking on ns-3.49 (NS3-001,
+[ns3-bugs.md](https://github.com/swarm-routing/sim-tools/blob/v1.1.4/docs/ns3-bugs.md)).
 
 ## 3. Scaffold your arm and make it a toy
 
@@ -348,29 +358,76 @@ an ICMP Destination Unreachable (the trigger of NS3-001). And it never calls
 the error callback, for the same reason.
 
 Then point the arm at the new helper instead of the OLSR placeholder, in
-`helper/toyflood-bench-arms.cc` (and say in `RegisterArm`'s description what
-the arm is; for a real protocol, which paper it follows):
+`helper/toyflood-bench-arms.cc` (the include, the helper member, the
+`TODO` comment, and `RegisterArm`'s description: what the arm is; for a real
+protocol, which paper it follows), and drop OLSR from the module's libraries
+in `CMakeLists.txt`. As a patch against the fresh scaffold: save this block as
+`toyflood-arm.patch` next to `contrib/`,
 
 ```diff
+--- a/helper/toyflood-bench-arms.cc
++++ b/helper/toyflood-bench-arms.cc
+@@ -6,13 +6,12 @@
+ // module (CMakeLists.txt). routing-compare finds this file and calls
+ // RegisterArms_toyflood() at start-up; `--protocols=toyflood` runs the arm.
+ //
+-// TODO: replace OlsrHelper, the placeholder, with this module's own helper,
+-// and say in RegisterArm's description which paper the arm follows. An arm
+-// counts in a comparison only after its three gates (org golden rule 6): a
++// The arm installs ToyFloodHelper (model/toyflood.h), a teaching toy with no
++// paper. An arm counts in a comparison only after its three gates (org golden rule 6): a
+ // fidelity sheet from its paper, the per-PR delivery smoke, and an anchor
+ // reproducing the paper's own trend.
 -#include "ns3/olsr-helper.h"
  #include "ns3/routing-bench-arm.h"
 +#include "ns3/toyflood.h"
-@@
+ 
+ namespace ns3 {
+ namespace toyflood {
+@@ -29,7 +28,7 @@
+     }
+ 
+ private:
 -    OlsrHelper m_helper;  // TODO: this module's helper
 +    ToyFloodHelper m_helper;
-@@
+ };
+ 
+ Ptr<bench::Arm> MakeToyfloodArm() {
+@@ -44,7 +43,7 @@
+ void RegisterArms_toyflood();
+ 
+ void RegisterArms_toyflood() {
 -    RegisterArm("toyflood", "toyflood (placeholder: stock OLSR until the module's own routing replaces it)",
 +    RegisterArm("toyflood", "toyflood (a duplicate-suppressed broadcast flood; a teaching toy, no paper)",
                  &toyflood::MakeToyfloodArm);
-```
-
-and drop OLSR from the module's libraries in `CMakeLists.txt`:
-
-```diff
+ }
+ 
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -23,6 +23,5 @@
+     ${toyflood_bench_sources}
+   HEADER_FILES
+     model/toyflood.h
 -  # olsr: the placeholder routing the arm installs until you replace it.
 -  LIBRARIES_TO_LINK ${libcore} ${libinternet} ${libolsr} ${toyflood_bench_libs}
 +  LIBRARIES_TO_LINK ${libcore} ${libinternet} ${toyflood_bench_libs}
+ )
 ```
+
+and apply it:
+
+```bash
+(cd contrib/toyflood && patch -p1 < ../../toyflood-arm.patch)
+```
+
+```text
+patching file helper/toyflood-bench-arms.cc
+patching file CMakeLists.txt
+```
+
+(Checked with `patch --dry-run`, then applied, against a fresh
+`ns3-tool scaffold toyflood --holder "Your Name"` of v1.1.4; the result built
+and ran as in step 4.)
 
 The rest of the scaffold stays: `CMakeLists.txt` compiles the arm file only
 where `routing-bench` is installed and enabled, so the module also builds
@@ -413,7 +470,8 @@ toyflood delivers: pdr=99.5
 
 And determinism: the same seed twice, `--perf=0` (the `##PERF##` line is
 cost, wall time included, so it is the one line that differs between runs;
-[markers.md](markers.md)), must be byte-identical:
+[markers.md](https://github.com/swarm-routing/sim-tools/blob/v1.1.4/docs/markers.md)),
+must be byte-identical:
 
 ```bash
 for i in a b; do
@@ -515,7 +573,12 @@ any run. And none of these numbers counts yet: the arm has cleared one gate of
 three.
 
 The drop book (`ns3-tool diagnose`, the `# drops` lines) assumes unicast hops,
-so for a flooding arm it is meaningless, as here (seeds 1-7):
+so for a flooding arm it is meaningless, as here (seeds 1-7; the
+`[route: ...]` line under each arm trimmed):
+
+```bash
+ns3-tool diagnose out/cell-seeds1.txt
+```
 
 ```text
 arm            lines     pdr   route   queue     mac    chan     ttl     sum   other
@@ -528,8 +591,10 @@ negative. Trust it for unicast arms only.
 
 To go beyond one machine, `ns3-campaign` runs a plan of cells as GitHub
 Actions jobs in one image pinned by digest
-([`python/ns3_tool/campaign.py`](../python/ns3_tool/campaign.py), a plan in
-[`campaigns/`](../campaigns/)); it needs a repository with the org's cell
+([`python/ns3_tool/campaign.py`](https://github.com/swarm-routing/sim-tools/blob/v1.1.4/python/ns3_tool/campaign.py),
+a plan in
+[`campaigns/`](https://github.com/swarm-routing/sim-tools/tree/v1.1.4/campaigns));
+it needs a repository with the org's cell
 workflow, which the local loop above does not.
 
 ## 6. The three gates
@@ -544,14 +609,28 @@ numbers illustrate the tooling and say nothing about flooding.
 `docs/fidelity.md` in your repository maps every mechanism and parameter of
 the arm to the paper's section, table or equation that gives it, or says
 `repo choice: <reason>`, or `unknown`. The tool is
-[`tools/fidelity/fidelity.py`](https://github.com/swarm-routing/.github/blob/main/tools/fidelity/fidelity.py)
-in swarm-routing/.github (standard library only): `skeleton` writes the empty
-sheet, `check` validates it (exit 1 on a problem; passing means the shape is
-right, not that the reading is). Its skeleton for this arm:
+[`tools/fidelity/`](https://github.com/swarm-routing/.github/tree/main/tools/fidelity)
+in swarm-routing/.github: `fidelity.py` and the sibling module it imports,
+`bib.py`; fetch both into one directory. `skeleton` writes the empty sheet,
+`check` validates it (exit 1 on a problem):
 
 ```bash
-python3 fidelity.py skeleton --protocol toyflood
+mkdir -p fidelity && cd fidelity
+curl -fsSLO https://raw.githubusercontent.com/swarm-routing/.github/main/tools/fidelity/fidelity.py
+curl -fsSLO https://raw.githubusercontent.com/swarm-routing/.github/main/tools/fidelity/bib.py
+python3 fidelity.py skeleton --protocol toyflood > fidelity.md
+python3 fidelity.py check fidelity.md
 ```
+
+```text
+fidelity.md: 1 mechanisms, 1 parameters; unknown: TODO, TODO; repo choice: none; open (sourced, status unknown): none
+fidelity check: ok
+```
+
+`check` passes the untouched skeleton, every row still `TODO`: it checks the
+sheet's shape and its Source cells, not that the mechanisms come from the
+paper, so passing it is not gate 1. Gate 1 is the sheet filled from the paper
+and reviewed. The skeleton (`fidelity.md` above):
 
 ```markdown
 # toyflood: fidelity sheet
@@ -590,16 +669,24 @@ tests.
 ### Gate 2: the per-PR delivery smoke
 
 Every change to the arm must still deliver: one short run, PDR > 0, read
-through the reader. Locally that is the smoke of step 4. In a checkout of
-this repository the same check is a script, which the stock arms' CI job and
-the scaffold's CI job use:
+through the reader. **With the packages only, the smoke of step 4 is gate 2**:
+the one-seed run, `ns3-tool compare --get pdr --proto ARM`, and the `awk`
+test that fails unless PDR > 0. Run it on every change.
+
+With a checkout of this repository (`git clone
+https://github.com/swarm-routing/sim-tools`), the same check is also a
+script, which this repository's stock-arm and scaffold CI jobs use. The
+scripts are not in the tarball or the wheel, and need the checkout around
+them: `arm-delivers.sh` finds the reader at `../../python/ns3_tool/`, so
+fetched alone it fails with `cd: ../../python/ns3_tool: No such file or
+directory`. From the checkout's root:
 
 ```bash
 bash tools/checks/arm-delivers.sh toyflood < out/smoke.txt   # exit 0 if pdr > 0
 bash tools/checks/check-scaffold-arm.sh /opt/ns-3 toyflood    # in the container, the checkout mounted
 ```
 
-The second, run in the worked example's container with this repository's
+The second, run in the worked example's container with the checkout's
 `tools/` and `python/` copied in, printed:
 
 ```text
@@ -647,13 +734,41 @@ references only; nothing in this guide needs that repository.
 
 ## 7. Cite
 
-Cite this tooling from [CITATION.cff](../CITATION.cff) (GitHub's "Cite this
-repository" button) and the concept DOI in the README's
-[Releases & citing](../README.md#releases--citing), which always resolves to
+Cite this tooling from
+[CITATION.cff](https://github.com/swarm-routing/sim-tools/blob/v1.1.4/CITATION.cff)
+(GitHub's "Cite this repository" button) and the concept DOI in the README's
+[Releases & citing](https://github.com/swarm-routing/sim-tools/blob/v1.1.4/README.md#releases--citing),
+which always resolves to
 the latest release; when you report a number, cite the version DOI of the
 release you measured with, listed on that Zenodo record. Copy DOIs from
 those records, never type them. The same section lists the works this
 tooling builds on (ns-3 among them).
+
+## Known rough edges
+
+Found while writing and following this guide, on v1.1.4; none of them stops
+a step, but each can mislead:
+
+- **The drop book is meaningless for a flooding arm** (step 5): every
+  broadcast reception counts as a hop, so `chan` goes to about -7800%.
+- **NRL is 0 for an arm that sends no control packets**: a flood's cost
+  shows in `##AIR##`, not in NRL (step 5).
+- **Concatenated seed blocks:** `ns3-tool compare --all`'s top row per arm
+  is the last block's summary table; read the `95% CI n=20` line. `compare`
+  also echoes every `##PERF##` line.
+- **The summary table is titled "AntHocNet protocol comparison"**, whatever
+  arms ran.
+- **`routing-compare --PrintHelp` cites AntHocNet-internal items**: bare
+  issue numbers (`#58`, `#296`, `#639` ...) that are AntHocNet's, and paths
+  such as `docs/benchmarks/scenarios/fanet.md` that exist in AntHocNet, not
+  here or in the tarball.
+- **The scaffold's comments and README name `swarm-routing/ns3-tools`**, this
+  repository's old name; it is `swarm-routing/sim-tools` now. Its README's
+  `docker run` example also mounts a checkout of this repository, which the
+  `ns3-build-contrib` call of step 4 does not need.
+- **The delivery-smoke scripts are not shipped** (gate 2):
+  `tools/checks/arm-delivers.sh` and `check-scaffold-arm.sh` are in neither
+  the tarball nor the wheel, and do not run outside a checkout.
 
 ## Worked example
 
