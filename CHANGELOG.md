@@ -1,3 +1,13 @@
+## v1.1.3 (2026-11-24)
+
+### Feat
+
+- **routing-bench**: guard the aodv arm against the ns-3.49 icmp livelock (ns3-001) (#322)
+
+### Fix
+
+- **coverage**: leave the lines after a forked worker's gcov dump out of the report (#232)
+
 ## v1.1.2 (2026-11-15)
 
 ### Fix
