@@ -1086,6 +1086,150 @@ def _plan_isolates():
             expect(False, "isolates-unknown", "accepted")
 
 
+# A rolling image: a tag the fake registry resolves to whatever TAGS says now.
+TAG = "ghcr.io/swarm-routing/ns3-dev:latest-optimized"
+ROLL1 = "ghcr.io/swarm-routing/ns3-dev@sha256:" + "3" * 64
+ROLL2 = "ghcr.io/swarm-routing/ns3-dev@sha256:" + "4" * 64
+TAGS = {}
+RESOLVED = []  # every tag the fake registry was asked for
+
+
+def fake_resolve(image):
+    RESOLVED.append(image)
+    if image not in TAGS:
+        raise OSError(f"no such tag {image}")
+    return TAGS[image]
+
+
+cp.resolve_tag = fake_resolve
+
+
+def rolling_of(d, **over):
+    return plan_of(d, rolling_image=True, image=TAG, **over)
+
+
+@case("rolling image: a tag is refused without rolling_image, accepted with it")
+def _rolling_load():
+    with tempfile.TemporaryDirectory() as d:
+        for bad in ({"image": TAG}, {"pins": {"quiet": {"image": TAG}}},
+                    {"rolling_image": "yes", "image": TAG},
+                    {"rolling_image": True, "image": "ghcr.io/swarm-routing/ns3-dev"}):  # fmt: skip
+            with contextlib.redirect_stderr(io.StringIO()):
+                try:
+                    plan_of(d, **bad)
+                except SystemExit as e:
+                    if "image" in bad and bad.get("rolling_image") is None:
+                        expect("rolling_image: true" in str(e), "rolling-hint", e)
+                    continue
+            expect(False, "rolling-refused", f"{bad} was accepted")
+        plan = rolling_of(d, pins={"quiet": {"image": TAG}})
+        expect(cp.rolling_tags(plan) == [TAG], "rolling-tags", cp.rolling_tags(plan))
+        expect(cp.rolling_tags(plan_of(d)) == [], "rolling-none", "a digest plan has tags")
+
+
+@case("rolling image: resolved once at the first dispatch, recorded, kept after the tag moves")
+def _rolling_dispatch():
+    TAGS[TAG] = ROLL1
+    RESOLVED.clear()
+    with tempfile.TemporaryDirectory() as d:
+        work = os.path.join(d, "w")
+        fake = FakeGh()
+        err = dispatch(rolling_of(d), work, fake, cap=10, arm="control")
+        images = {b["inputs"]["image"] for _u, b in fake.dispatched}
+        expect(images == {ROLL1} and RESOLVED == [TAG], "rolling-first", (images, RESOLVED))
+        expect(f"image {TAG} = {ROLL1} (resolved now" in err, "rolling-print", err)
+        state = cp.load_state(work)
+        expect(state["images"] == {TAG: ROLL1} and state["pins"]["control"] == [SHA, ROLL1],
+               "rolling-state", state)  # fmt: skip
+        TAGS[TAG] = ROLL2  # the tag moves mid-campaign
+        err = dispatch(rolling_of(d), work, fake, cap=10)
+        images = {b["inputs"]["image"] for _u, b in fake.dispatched}
+        expect(images == {ROLL1} and len(fake.dispatched) == 7 and RESOLVED == [TAG],
+               "rolling-kept", (images, RESOLVED, err))  # fmt: skip
+        expect(f"image {TAG} = {ROLL1} (recorded in" in err, "rolling-kept-print", err)
+        # --no-reuse once cells are logged keeps the digest too
+        err = dispatch(rolling_of(d), work, fake, cap=10, reuse=False)
+        expect(cp.load_state(work)["images"] == {TAG: ROLL1} and "digest stays" in err,
+               "rolling-no-reuse-logged", err)  # fmt: skip
+        # plan prints the recorded digest, not the tag's now
+        code, out, err = plan_out_work(rolling_of(d), work)
+        expect(code == 0 and f"\t{ROLL1}\t{SHA}\t" in out and ROLL2 not in out + err
+               and RESOLVED == [TAG], "rolling-plan-recorded", out + err)  # fmt: skip
+        # collect checks ##PROV## against the recorded digest
+        src, out_dir = os.path.join(d, "src"), os.path.join(d, "out")
+        for label in ("control/grid", "control/sat"):
+            write_run(src, label, "##RUN## 1 anthocnet 90\n" + prov(image=ROLL1))
+        write_run(src, "control/vanet-s1", "##RUN## 1 anthocnet 90\n" + prov(image=ROLL2))
+        code, err = collect(rolling_of(d), work, src, out_dir, arm="control")
+        expect(code == 1 and "control/vanet-s1" in err and f"not {ROLL1.split('@')[1]}" in err
+               and os.path.exists(os.path.join(out_dir, "grid-vtest.txt")),
+               "rolling-collect", err)  # fmt: skip
+        # verdicts name the digest first
+        with (
+            contextlib.redirect_stdout(io.StringIO()) as out,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            cp.cmd_verdicts(rolling_of(d), ns(work=work, dir=out_dir))
+        expect(out.getvalue().startswith(f"# image {TAG} = {ROLL1}\n"), "rolling-verdicts",
+               out.getvalue())  # fmt: skip
+        # a new generation resolves afresh
+        fresh = dispatch(rolling_of(d), os.path.join(d, "w2"), FakeGh(), cap=10, dry_run=True)
+        expect(f"image {TAG} = {ROLL2} (what the tag names now" in fresh
+               and not os.path.exists(os.path.join(d, "w2", "state.json")),
+               "rolling-dry-run", fresh)  # fmt: skip
+        # collect with no recorded digest is refused
+        code, err = collect(rolling_of(d), os.path.join(d, "w3"), src, out_dir)
+        expect(code and "no digest recorded" in str(code) + err, "rolling-collect-unrecorded",
+               (code, err))  # fmt: skip
+
+
+@case("rolling image: --no-reuse with nothing logged re-resolves; a registry error stops dispatch")
+def _rolling_refresh():
+    TAGS[TAG] = ROLL1
+    with tempfile.TemporaryDirectory() as d:
+        work = os.path.join(d, "w")
+        os.makedirs(work)
+        cp.save_state(work, {"images": {TAG: ROLL2}, "pins": {"control": [SHA, ROLL2]}})
+        fake = FakeGh()
+        dispatch(rolling_of(d), work, fake, cap=10, reuse=False)
+        expect({b["inputs"]["image"] for _u, b in fake.dispatched} == {ROLL1}
+               and cp.load_state(work)["images"] == {TAG: ROLL1}, "rolling-refresh",
+               fake.dispatched)  # fmt: skip
+        del TAGS[TAG]
+        fake = FakeGh()
+        err = dispatch(rolling_of(d), os.path.join(d, "w2"), fake, cap=10)
+        expect("cannot resolve" in err and not fake.dispatched, "rolling-unresolved", err)
+
+
+@case("rolling image: a digest-pinned plan's `plan` output is unchanged, no registry lookup")
+def _rolling_digest_unchanged():
+    RESOLVED.clear()
+    REGISTRY[IMAGE] = "3.48"
+    cp._NS3.clear()
+    with tempfile.TemporaryDirectory() as d:
+        before = plan_out(plan_of(d))
+        after = plan_out(plan_of(d, rolling_image=True))
+        offline = plan_out_work(rolling_of(d), os.path.join(d, "none"), offline=True)
+    expect(before == after and "image" not in before[2] and not RESOLVED, "rolling-digest",
+           (before, after))  # fmt: skip
+    expect(f"\t{TAG}\t" in offline[1] and "no digest recorded" in offline[2] and not RESOLVED,
+           "rolling-offline", offline)  # fmt: skip
+
+
+def plan_out_work(plan, work, offline=False):
+    """plan_out with a --work directory."""
+    code = 0
+    with (
+        contextlib.redirect_stdout(io.StringIO()) as out,
+        contextlib.redirect_stderr(io.StringIO()) as err,
+    ):
+        try:
+            cp.cmd_plan(plan, argparse.Namespace(offline=offline, work=work))
+        except SystemExit as e:
+            code = e.code
+    return code, out.getvalue(), err.getvalue()
+
+
 @case("NS3_TOOL_ANTHOCNET: plan flags v2.7.x-image-control's 3.42-vs-3.48 MANET and ISL cells")
 def _corpus_control():
     root = os.environ.get("NS3_TOOL_ANTHOCNET")

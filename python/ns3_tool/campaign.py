@@ -23,7 +23,9 @@ A change-test plan (AntHocNet's format, with a `generation` key; .yaml, .yml
 or .json, or a .toml that has the key) is routed to change_plan.py instead:
 plan, dispatch, status, collect and verdicts of cells x arms in a protocol
 repository, each cell through its caller of swarm-routing/.github's
-reusable-benchmark-cell.yml, pinned to the plan's source_sha and image (#81).
+reusable-benchmark-cell.yml, pinned to the plan's source_sha and image (#81);
+a change test that is never published may name the image by tag with
+`rolling_image: true`, resolved to one digest per campaign (change_plan.py).
 
 State (the image, the dispatch date, the label -> run id log, downloaded
 artifacts) lives in --work, default .campaign/<name>/, so every command is

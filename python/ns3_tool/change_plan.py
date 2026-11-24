@@ -72,6 +72,33 @@ compared like any other; a cell with no `modules=` at all (AntHocNet's
 committed cells) has nothing to check. `plan` and `verdicts` also read the committed historical plans, which
 predate the pins.
 
+A rolling image: a change test that is never published (a protocol
+repository's smoke plan, head against base of one protocol, paired by seed)
+may follow ns-3 releases with no plan edit by naming a tag instead of a
+digest, with `rolling_image: true`:
+
+    rolling_image: true
+    image: ghcr.io/swarm-routing/ns3-dev:latest-optimized
+
+Only then may `image` (plan-wide or in `pins.<arm>`) be
+`ghcr.io/<owner>/<name>:<tag>`; without it a tag is refused, as an anchor, a
+pilot and anything published pin a digest (sim-containers golden rule 13).
+The campaign still runs one image for its whole life: the first `dispatch`
+resolves each tag to the digest it names then (the registry's anonymous
+pull token, a HEAD of the manifest, its Docker-Content-Digest), records it
+in state.json (`images`: tag -> ghcr.io/...@sha256:...) and dispatches every
+cell with that digest, so cell keys, reuse and collect's ##PROV## image
+check are those of a pinned plan. Every later `dispatch`, `collect` and
+`verdicts` (`--work`, default .campaign/<generation>/) uses the recorded
+digest, never the tag again, even after the tag moved; `collect` refuses a
+rolling plan with no recorded digest. `plan` prints the recorded digest, or,
+before the first dispatch, the one the tag names now (not recorded;
+`--offline` leaves the tag); `dispatch` prints the digest it records or
+reuses; `verdicts` prints `# image <tag> = <digest>` first, so the verdict
+lines carry the image. A new generation (or another `--work`) resolves
+afresh; so does `dispatch --no-reuse` while nothing is logged in runs.tsv,
+and never once a cell is (it then keeps the recorded digest and says so).
+
 Reuse (#94, #155): when the repository's caller forwards a `key` input to the
 reusable cell (its text names `inputs.key`; `dispatch` reads the caller at the
 plan's `ref`), every job has a key, campaign.cell_key over what pins it: the
@@ -172,6 +199,14 @@ ARTIFACT = "benchmark-cell"  # what reusable-benchmark-cell.yml uploads; -<key> 
 ARTIFACT_RE = re.compile(rf"{ARTIFACT}(-[0-9a-f]{{64}})?")
 RESULTS = ("results.txt", "paper-results.txt", "satellite-results.txt")
 IMAGE_RE = re.compile(r"ghcr\.io/[a-z0-9._-]+/[a-z0-9._/-]+@sha256:[0-9a-f]{64}")
+# A rolling image (rolling_image: true): a tag, resolved once per campaign.
+TAG_RE = re.compile(r"ghcr\.io/[a-z0-9._-]+/[a-z0-9._/-]+:[A-Za-z0-9_][A-Za-z0-9._-]{0,127}")
+DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}")
+MANIFESTS = (
+    "application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,"
+    "application/vnd.docker.distribution.manifest.list.v2+json,"
+    "application/vnd.docker.distribution.manifest.v2+json"
+)
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 REPO_RE = re.compile(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+")
 CELL_RE = re.compile(r"[a-z0-9][a-z0-9._-]*")
@@ -339,14 +374,26 @@ def load_plan(path):
     pins = plan.get("pins") or {}
     if not isinstance(pins, dict):
         sys.exit(f"{path}: pins is a mapping arm -> {{source_sha, image}}")
+    rolling = plan.setdefault("rolling_image", False)
+    if not isinstance(rolling, bool):
+        sys.exit(f"{path}: rolling_image is true or false, not {rolling!r}")
     for where, d in [("plan", plan)] + [(f"pins {a}", p) for a, p in pins.items()]:
         if where != "plan" and (not isinstance(d, dict) or set(d) - {"source_sha", "image"}):
             sys.exit(f"{path}: {where}: only source_sha and image")
         if "source_sha" in d and not SHA_RE.fullmatch(str(d["source_sha"])):
             sys.exit(f"{path}: {where}: source_sha {d['source_sha']!r} is not a 40-char commit")
-        if "image" in d and not IMAGE_RE.fullmatch(str(d["image"])):
+        image = str(d.get("image", ""))
+        if "image" in d and not IMAGE_RE.fullmatch(image):
+            if rolling and TAG_RE.fullmatch(image):
+                continue
+            hint = (
+                "; a tag needs rolling_image: true (a change test that is never published)"
+                if TAG_RE.fullmatch(image)
+                else ""
+            )
             sys.exit(
-                f"{path}: {where}: image {d['image']!r} is not ghcr.io/<owner>/<name>@sha256:<64 hex>"
+                f"{path}: {where}: image {d['image']!r} is not "
+                f"ghcr.io/<owner>/<name>@sha256:<64 hex>{hint}"
             )
     for arm in pins:
         if arm not in plan["arms"]:
@@ -470,14 +517,87 @@ def release(version):
     return m.group(1) if m else None
 
 
+def registry_token(host, repo):
+    """An anonymous pull token for a public repository of a registry."""
+    with urllib.request.urlopen(
+        f"https://{host}/token?scope=repository:{repo}:pull", timeout=20
+    ) as r:
+        return json.load(r)["token"]
+
+
+def resolve_tag(image):
+    """ghcr.io/<owner>/<name>:<tag> -> ghcr.io/<owner>/<name>@sha256:<digest> it names now.
+
+    A HEAD of the tag's manifest (index or single image) with an anonymous
+    token; the digest is the registry's Docker-Content-Digest header."""
+    ref, tag = image.rsplit(":", 1)
+    host, repo = ref.split("/", 1)
+    req = urllib.request.Request(
+        f"https://{host}/v2/{repo}/manifests/{tag}",
+        method="HEAD",
+        headers={"Authorization": f"Bearer {registry_token(host, repo)}", "Accept": MANIFESTS},
+    )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        digest = r.headers.get("Docker-Content-Digest", "")
+    if not DIGEST_RE.fullmatch(digest):
+        raise ValueError(f"{image}: the registry gave no sha256 digest ({digest!r})")
+    return f"{ref}@{digest}"
+
+
+def rolling_tags(plan):
+    """The tags a rolling plan names (plan-wide and per-arm images), sorted."""
+    pins = (plan.get("pins") or {}).values()
+    images = [plan.get("image")] + [p.get("image") for p in pins if isinstance(p, dict)]
+    return sorted({i for i in images if i and TAG_RE.fullmatch(str(i))})
+
+
+def roll(plan, state, mode, work, refresh=False):
+    """Swap each tag of a rolling plan for its digest; {tag: digest ref}.
+
+    mode "record" (dispatch): the digest recorded in state["images"], else
+    the one the tag names now, written into state (the caller saves it);
+    refresh re-resolves every tag. "peek" (plan): the recorded digest, else
+    the tag's now, not recorded; "offline" leaves an unrecorded tag. "recorded"
+    (collect, verdicts): the recorded digest only; an unrecorded tag stays.
+    Prints one line per tag on stderr."""
+    tags = rolling_tags(plan)
+    images = state.setdefault("images", {}) if mode == "record" else state.get("images", {})
+    out = {}
+    for tag in tags:
+        if tag in images and not (refresh and mode == "record"):
+            out[tag] = images[tag]
+            print(f"image {tag} = {images[tag]} (recorded in {work}/state.json)", file=sys.stderr)
+            continue
+        if mode in ("recorded", "offline"):
+            print(f"image {tag}: no digest recorded in {work}/state.json", file=sys.stderr)
+            continue
+        try:
+            ref = resolve_tag(tag)
+        except (OSError, ValueError, KeyError) as e:
+            sys.exit(f"image {tag}: cannot resolve the tag to a digest: {e}")
+        out[tag] = ref
+        if mode == "record":
+            images[tag] = ref
+            print(f"image {tag} = {ref} (resolved now, recorded for this campaign)",
+                  file=sys.stderr)  # fmt: skip
+        else:
+            print(f"image {tag} = {ref} (what the tag names now; the first dispatch records it)",
+                  file=sys.stderr)  # fmt: skip
+    if out:
+        if plan.get("image") in out:
+            plan["image"] = out[plan["image"]]
+        for p in plan["pins"].values():
+            if p.get("image") in out:
+                p["image"] = out[p["image"]]
+    plan["_rolled"] = out
+    return out
+
+
 def registry_config(image):
     """An image's config (labels, env), read anonymously from its registry."""
     ref, digest = image.split("@", 1)
     host, repo = ref.split("/", 1)
-    with urllib.request.urlopen(
-        f"https://{host}/token?scope=repository:{repo}:pull", timeout=20
-    ) as r:
-        token = json.load(r)["token"]
+    token = registry_token(host, repo)
 
     def get(path, accept):
         req = urllib.request.Request(
@@ -487,12 +607,7 @@ def registry_config(image):
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.load(r)
 
-    manifest = get(
-        f"manifests/{digest}",
-        "application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,"
-        "application/vnd.docker.distribution.manifest.list.v2+json,"
-        "application/vnd.docker.distribution.manifest.v2+json",
-    )
+    manifest = get(f"manifests/{digest}", MANIFESTS)
     if "manifests" in manifest:  # an index: the linux/amd64 image
         one = next(
             m for m in manifest["manifests"] if m.get("platform", {}).get("architecture") == "amd64"
@@ -842,6 +957,9 @@ def write_log(work, log):
 
 
 def cmd_plan(plan, a):
+    if rolling_tags(plan):
+        work = work_dir(plan, a)
+        roll(plan, load_state(work), "offline" if a.offline else "peek", work)
     rows = arm_rows(plan, a.offline)
     for label, _cell, _arm, ns3, image, sha, _work, command in rows:
         print(f"{label}\tns-3 {ns3}\t{image}\t{sha}\t{command}")
@@ -875,12 +993,20 @@ def cmd_dispatch(plan, a):
             "has no in-job legacy build; dispatch the other arms here (--arm) and these with "
             "the repository's own legacy path"
         )
+    work = work_dir(plan, a)
+    state = load_state(work)
+    if rolling_tags(plan):  # one digest per tag for the campaign's whole life
+        refresh = not a.reuse and not read_log(work)
+        if not a.reuse and not refresh and state.get("images"):
+            print(f"--no-reuse: {work}/runs.tsv logs cells already, so the recorded digest "
+                  "stays (start a new generation to follow the tag)", file=sys.stderr)  # fmt: skip
+        if refresh and state.get("images"):
+            state["pins"] = {}  # nothing ran on them: the arms' pins follow the new digest
+        roll(plan, state, "peek" if a.dry_run else "record", work, refresh)
     if plan.get("isolates") and check_confounds(plan, arm_rows(plan)):
         # a declared control: refuse its confounds before any run (#89)
         sys.exit("dispatch: the plan's arms differ in more than it isolates (see above)")
     pins = {arm: pin(plan, arm) for arm in sorted({j[2] for j in mine})}
-    work = work_dir(plan, a)
-    state = load_state(work)
     logged = state.get("pins", {})
     for arm, (sha, image) in pins.items():
         if arm in logged and logged[arm] != [sha, image]:
@@ -1029,6 +1155,10 @@ def cmd_collect(plan, a):
     work = work_dir(plan, a)
     log = read_log(work)
     state = load_state(work)
+    if rolling_tags(plan):
+        missing = sorted(set(rolling_tags(plan)) - set(roll(plan, state, "recorded", work)))
+        if missing:
+            sys.exit(f"collect: {', '.join(missing)}: no digest recorded; dispatch records it")
     repo = None if a.src else target(plan, a)[0]
     groups = {}
     for label, cell, arm, _wf, _inp in selected(plan, a):
@@ -1129,6 +1259,12 @@ def cmd_verdicts(plan, a):
         },
         key=lambda p: (p[1], list(plan["cells"]).index(p[0])),
     )
+    tags = rolling_tags(plan)
+    if tags:  # the verdict lines name the digest the campaign ran
+        work = work_dir(plan, a)
+        got = roll(plan, load_state(work), "recorded", work)
+        for tag in tags:
+            print(f"# image {tag} = {got.get(tag, f'? (no digest in {work}/state.json)')}")
     for cell, arm in pairs:
         base = os.path.join(a.dir, out_name(plan, cell, plan["control"]))
         test = os.path.join(a.dir, out_name(plan, cell, arm))
@@ -1201,6 +1337,12 @@ def main(argv=None):
             s.add_argument(
                 "--workflow",
                 help="that caller workflow (default: plan's workflow, else benchmark-cell.yml)",
+            )
+        if name in ("plan", "verdicts"):
+            s.add_argument(
+                "--work",
+                help="state directory, for a rolling image's recorded digest "
+                "(default .campaign/<generation>)",
             )
         if name == "plan":
             s.add_argument(
