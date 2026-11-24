@@ -113,7 +113,10 @@ ns3-campaign plan campaigns/anthocnet-aodv-smoke.toml   # offline: the image and
 GitHub Actions through `campaign-image.yml` (one image per plan) and
 `campaign-cell.yml` (one cell, pulled by digest); they need `gh` and write
 access to the repository. The plan format is the docstring of
-`python/ns3_tool/campaign.py`. Profiling one cell (perf, heaptrack,
+`python/ns3_tool/campaign.py`. Once `collect` has recorded `##PERF##`
+samples, `plan` also prints the estimated runner-minutes and elapsed time per
+arm and in total, and `dispatch --budget-minutes N` refuses a larger estimate
+(`--yes-over-budget` to override; #95). Profiling one cell (perf, heaptrack,
 massif) is [profiling.md](profiling.md).
 
 ## Docker and dev containers

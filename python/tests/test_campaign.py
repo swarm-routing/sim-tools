@@ -264,9 +264,10 @@ def toml(plan):
 class FakeGitHub:
     """The endpoints campaign.py calls, over in-memory runs and artifacts."""
 
-    def __init__(self, plan, image=IMAGE, active=0, wrong=(), failed=(), partial=()):
+    def __init__(self, plan, image=IMAGE, active=0, wrong=(), failed=(), partial=(), perf=None):
         self.plan, self.image, self.active, self.wrong = plan, image, active, set(wrong)
         self.failed, self.partial = tuple(failed), tuple(partial)
+        self.perf = perf  # {arm: wall_s}: ##PERF## rows and 10-minute runs (#95)
         self.runs, self.artifacts, self.dispatched = {}, {}, []
         self.next_id = 1000
         self.expired = set()  # run ids whose artifact has expired
@@ -283,7 +284,8 @@ class FakeGitHub:
         args = cp.parameters(inputs["args"])
         first, n = args["firstRun"], args["runs"]
         rng = random.Random(first)
-        out = [f"##CONFIG## scenario=paper runs={n} firstRun={first}"]
+        size = " nNodes=50 time=300" if self.perf else ""
+        out = [f"##CONFIG## scenario=paper{size} runs={n} firstRun={first}"]
         for arm in args["protocols"].split(","):
             # A partial run (a crash or timeout): aodv lost its last seed.
             last = first + n - (arm == "aodv" and inputs["label"].endswith(self.partial or ("\0",)))
@@ -294,6 +296,9 @@ class FakeGitHub:
                 out.append(
                     f"##RUN## {s} {arm} {pdr:.1f} 18.4 {d99:.1f} 12.51 {nrl:.2f} 27.79 2.5 120.5 7.7219"
                 )
+                if self.perf:
+                    w = self.perf[arm]
+                    out.append(f"##PERF## paper {arm} {s} {w:.3f} {w:.3f} 1000 -")
         mods = ",".join(f"{m['name']}@{m['commit']}" for m in cp.modules(self.plan))
         image = OTHER if inputs["label"].endswith(tuple(self.wrong)) else inputs["image"]
         out.append(f"##ARGS## {inputs['program']} {inputs['args']}")
@@ -322,6 +327,10 @@ class FakeGitHub:
                 if self.failed and title.endswith(self.failed)
                 else "success",
             }
+            if self.perf:
+                self.runs[rid].update(
+                    run_started_at="2026-11-20T10:00:00Z", updated_at="2026-11-20T10:10:00Z"
+                )
             self.dispatched.append((wf, body))
             if wf == cp.IMAGE_WORKFLOW:
                 files = {
@@ -951,6 +960,137 @@ def test_image_gone():
         os.chdir(old)
 
 
+def test_cost():
+    """#95: collect learns ##PERF## samples, plan prints the estimate, dispatch's budget guard."""
+    root = os.path.join(HERE, "..", "..")
+    old, old_env, old_cache = os.getcwd(), os.environ.get("NS3_CAMPAIGN_PERF"), cp.CACHE
+    os.chdir(root)
+    plan_path = "campaigns/anthocnet-aodv-smoke.toml"
+    walls = {"anthocnet": 2.0, "aodv": 1.0}
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            store = os.environ["NS3_CAMPAIGN_PERF"] = os.path.join(d, "perf.jsonl")
+            cp.CACHE = os.path.join(d, "cache")
+            empty_out = run(["plan", plan_path, "--work", os.path.join(d, "none")])
+            check("estimate" not in empty_out[2], "plan: no sample, no estimate line")
+            fails(cp, "budget_minutes", lambda p: p.update(budget_minutes=0))
+
+            work = os.path.join(d, "w")
+            cp.gh = FakeGitHub(cp.load_plan(plan_path), perf=walls)
+            run(["build", plan_path, "--work", work])
+            run(["dispatch", plan_path, "--work", work])
+            code, _o, err = run(["collect", plan_path, "--work", work, "--out", d + "/runs"])
+            samples = cp.cost.read_samples(store)
+            perf = [s for s in samples if s["kind"] == "perf"]
+            over = sorted(s["seconds"] for s in samples if s["kind"] == "overhead")
+            check(
+                code is None and len(perf) == 2 * 40 and "recorded 83 cost sample(s)" in err,
+                f"collect: every ##PERF## row and one overhead per run recorded ({code}, {err})",
+            )
+            check(over == [540.0, 570.0, 570.0], f"collect: overhead = run time - walls ({over})")
+            check(
+                {(s["arm"], s["nNodes"], s["time"], s["wall_s"]) for s in perf}
+                == {("anthocnet", 50, 300, 2.0), ("aodv", 50, 300, 1.0)},
+                "collect: samples carry their ##CONFIG##",
+            )
+            run(["collect", plan_path, "--work", work, "--out", d + "/runs2"])
+            check(len(cp.cost.read_samples(store)) == 83, "collect: a second collect adds nothing")
+
+            code, out, err = run(["plan", plan_path, "--work", os.path.join(d, "none")])
+            check(out == empty_out[1], "plan: stdout byte-identical with samples")
+            lines = [ln for ln in err.splitlines() if ln.startswith("estimate\t")]
+            check(
+                lines[0].startswith(
+                    "estimate\tanthocnet\t3 cells, 0 reusable\t~1.3 runner-min\t"
+                    "~0.7 min elapsed at cap 12\t(fit: n=40, k=1.00"
+                )
+                and lines[1].startswith("estimate\taodv\t3 cells, 0 reusable\t~0.7 runner-min"),
+                f"plan: per-arm runner-minutes and elapsed ({lines})",
+            )
+            check(
+                lines[2] == "estimate\toverhead\t9.5 min per run (median of 3 run(s))"
+                and lines[3]
+                == "estimate\ttotal\t3 cells, 0 reusable\t~30.5 runner-min\t~10.5 min elapsed at cap 12",
+                f"plan: overhead and total ({lines[2:]})",
+            )
+            _c, _o, err = run(["plan", plan_path, "--work", work])
+            check(
+                "estimate\ttotal\t3 cells, 3 reusable\t~0.0 runner-min" in err,
+                "plan: reusable cells are free",
+            )
+
+            with open(store) as f:
+                kept = [ln for ln in f if '"aodv"' not in ln]
+            with open(store, "w") as f:
+                f.writelines(kept)
+            _c, _o, err = run(["plan", plan_path, "--work", os.path.join(d, "none")])
+            check(
+                "estimate\taodv\t3 cells, 0 reusable\t<=1.3 runner-min" in err
+                and "upper bound from the slowest known arm, anthocnet" in err
+                and "estimate\ttotal\t3 cells, 0 reusable\t<=" in err,
+                "plan: an arm without samples is bounded by the slowest known arm",
+            )
+
+            def dispatched(fake):
+                return len([b for wf, b in fake.dispatched if wf == cp.CELL_WORKFLOW])
+
+            def guarded(name, *extra, plan=plan_path):
+                fake = FakeGitHub(cp.load_plan(plan_path), perf=walls)
+                cp.gh = fake
+                w = os.path.join(d, name)
+                run(["build", plan_path, "--work", w])
+                return (*run(["dispatch", plan, "--work", w, "--no-reuse", *extra]), fake)
+
+            code, _o, _e, fake = guarded("g1", "--budget-minutes", "10")
+            check(
+                code
+                and code.startswith("dispatch refused: estimated")
+                and "over the budget of 10.0" in code
+                and "estimate\taodv\t" in code
+                and dispatched(fake) == 0,
+                f"dispatch: over the budget, refused before any cell, with the breakdown ({code})",
+            )
+            code, _o, err, fake = guarded("g2", "--budget-minutes", "10", "--yes-over-budget")
+            check(
+                code is None and dispatched(fake) == 3 and "over budget, dispatching anyway" in err,
+                "dispatch: --yes-over-budget dispatches anyway",
+            )
+            code, _o, _e, fake = guarded("g3", "--budget-minutes", "100")
+            check(code is None and dispatched(fake) == 3, "dispatch: within the budget")
+            capped = os.path.join(d, "capped.toml")
+            with open(plan_path) as f:
+                text = f.read()
+            with open(capped, "w") as f:
+                f.write("budget_minutes = 10\n" + text)
+            code, _o, _e, fake = guarded("g4", plan=capped)
+            check(
+                code and "over the budget of 10" in code and dispatched(fake) == 0,
+                "dispatch: the plan's budget_minutes",
+            )
+            os.remove(store)
+            code, _o, _e, fake = guarded("g5", "--budget-minutes", "10")
+            check(
+                code and "unknown cost" in code and dispatched(fake) == 0,
+                "dispatch: a budget and no samples refuses (fails safe)",
+            )
+            code, _o, _e, fake = guarded("g6")
+            check(code is None and dispatched(fake) == 3, "dispatch: no budget, no guard")
+    finally:
+        os.chdir(old)
+        cp.CACHE = old_cache
+        if old_env is None:
+            os.environ.pop("NS3_CAMPAIGN_PERF", None)
+        else:
+            os.environ["NS3_CAMPAIGN_PERF"] = old_env
+
+
+def fails(mod, needle, change):
+    plan = example()
+    change(plan)
+    errs = mod.validate(plan)
+    check(any(needle in e for e in errs), f"validator: {needle} ({errs})")
+
+
 if __name__ == "__main__":
     test_validate()
     test_plan_and_inputs()
@@ -959,4 +1099,5 @@ if __name__ == "__main__":
     test_cell_key()
     test_reuse()
     test_image_gone()
+    test_cost()
     print("test_campaign: all ok")
