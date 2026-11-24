@@ -804,7 +804,7 @@ private:
                   << k.Vetoed() << " (source-own " << k.vetoed[IcmpErrorGuardCounters::SOURCE_OWN]
                   << "), unmatched " << k.unmatched << '\n';
 #if defined(ROUTING_BENCH_NS3_MINOR) && ROUTING_BENCH_NS3_MINOR == 49
-        // Strict, as ns3-containers' XFAIL: if 3.49 stops livelocking, this
+        // Strict, as sim-containers' XFAIL: if 3.49 stops livelocking, this
         // test no longer proves the guard.
         NS_TEST_ASSERT_MSG_EQ(bare.livelock, true, "unguarded AODV livelocks on ns-3.49");
 #elif defined(ROUTING_BENCH_NS3_MINOR) && ROUTING_BENCH_NS3_MINOR < 49

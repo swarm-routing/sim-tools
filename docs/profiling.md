@@ -16,7 +16,7 @@ allocation site), not the seconds. Compare costs between arms with
 
 `ns3-dev:latest-debug` does not ship `perf`, heaptrack or valgrind today
 (checked on ns-3.49: `command -v perf heaptrack valgrind` finds none). Adding
-them to the debug image only is swarm-routing/ns3-containers#109. Until it
+them to the debug image only is swarm-routing/sim-containers#109. Until it
 lands, install them in a throwaway container as below (Ubuntu 24.04 packages;
 versions seen working: heaptrack 1.5.0, valgrind 3.22.0, `linux-tools-generic`
 for `perf`). Nothing here is committed or reaches a cell.

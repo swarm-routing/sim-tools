@@ -84,7 +84,7 @@ skips the Docker suite and the wheel check.
 | every stock arm delivers | `docker run --rm -v "$PWD:/src:ro" ghcr.io/swarm-routing/ns3-dev:latest-debug bash -c 'ns3-build-contrib routing-bench=/src/ns3/routing-bench && bash /src/tools/checks/check-stock-arms.sh /opt/ns-3 "aodv olsr dsdv hwmp"'` | `stock arms deliver` |
 
 The stock AODV arm is checked on the `3.48-debug` image only, because
-ns-3.49's AODV livelocks (swarm-routing/ns3-containers#35). CI also runs,
+ns-3.49's AODV livelocks (swarm-routing/sim-containers#35). CI also runs,
 on the image only: the determinism gate (`routing-compare ... --protocols=olsr`
 twice per seed, byte-identical), the `##PERF##` marker check
 (`tools/checks/check-perf-markers.sh`), and `ns3-tool scaffold`, which

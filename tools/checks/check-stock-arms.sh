@@ -11,7 +11,7 @@
 #     the readers by arm-delivers.sh, not by awk column position, #6);
 #   - an arm that is not installed aborts with "unknown protocol" (#448).
 # Each run has a wall-clock budget, so a hang (ns-3.49's AODV, #843 /
-# ns3-containers#35) fails the check instead of running to the job timeout.
+# swarm-routing/sim-containers#35) fails the check instead of running to the job timeout.
 set -euo pipefail
 ns3=$1
 arms=$2

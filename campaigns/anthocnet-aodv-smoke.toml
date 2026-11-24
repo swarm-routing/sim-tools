@@ -1,6 +1,6 @@
 # The two-arm smoke of ns3-tools#66: AntHocNet against stock AODV, 2 cells x
 # 20 seeds, on one campaign image. AODV-family arms pin ns-3.48 until
-# ns-3.49's AODV livelock is fixed (ns3-containers#35, AntHocNet#843).
+# ns-3.49's AODV livelock is fixed (swarm-routing/sim-containers#35, AntHocNet#843).
 #
 #   ns3-campaign plan campaigns/anthocnet-aodv-smoke.toml
 #   ns3-campaign build campaigns/anthocnet-aodv-smoke.toml

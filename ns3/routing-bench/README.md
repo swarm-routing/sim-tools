@@ -142,7 +142,7 @@ scenario ran at one instant (the watch's `maxAtTs`, ns-3.49, arms `aodv`,
 | `vanet` | 1 | 562 |
 
 An unguarded stock AODV run on ns-3.49's sparse field
-(`--nNodes=16 --area=500 --range=100`, the ns3-containers `sparse-aodv`
+(`--nNodes=16 --area=500 --range=100`, the sim-containers `sparse-aodv`
 canary's shape) stops at 4.89 s of simulated time, seed 1, after 46 s of wall time on the
 debug build (1000000 ICMP-storm events; the storm costs about 45 µs per event
 there), where it used to run until the job's timeout; the guarded
