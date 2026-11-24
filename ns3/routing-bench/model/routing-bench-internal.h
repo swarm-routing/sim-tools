@@ -12,6 +12,7 @@
  * ns3::bench::RunHarness and the arm registry (routing-bench-arm.h).
  */
 
+#include "livelock-watch.h"
 #include "routing-bench-arm.h"
 
 #include <cstdint>
@@ -101,6 +102,9 @@ struct Params {
     std::string vizTrace;  // #641: --vizTrace, the first anthocnet run as a replay
     double vizStep = 1.0;
     double seriesEvery = 0.0;  // #62: --seriesEvery, 0 = off
+    // NS3-001: --livelockEvents, events at one simulated instant that fail
+    // the run (livelock-watch.h); 0 = off.
+    uint64_t livelockEvents = bench::kDefaultLivelockEvents;
 };
 
 struct Result {

@@ -49,6 +49,11 @@ the same seed by nature. So:
   added);
 - the workflow-written lines `##ARGS##` and `##PROV##` are not harness output
   either: they describe how a cell was run, not what it measured.
+- the livelock watch (`--livelockEvents`, NS3-001) adds no marker and no
+  `##CONFIG##` field: a run it does not stop prints the same bytes as with it
+  off, and a run it stops prints no row, only one `routing-bench: livelock:`
+  line on stderr, and fails (exit 70; `ns3/routing-bench/README.md`
+  "Failing fast on a livelock").
 
 Across ns-3 releases a seed draws the same scenario: node placement, movement
 and the flows' start times are pinned to streams that do not depend on how

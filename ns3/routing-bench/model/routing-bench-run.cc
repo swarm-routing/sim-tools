@@ -49,6 +49,7 @@
 #include <utility>
 #include <vector>
 
+#include "arm-isolation.h"
 #include "routing-bench-internal.h"
 #include "urban-obstacle-loss-model.h"
 
@@ -2261,7 +2262,22 @@ Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
     }
 
     Simulator::Stop(Seconds(P.simTime));
+    // NS3-001: fail fast, rather than at the job's timeout, if simulated time
+    // stops advancing. Installed last, so it sees exactly the run's events;
+    // a run it does not stop is byte-identical (livelock-watch.h).
+    bench::WatchForLivelock(P.livelockEvents);
     Simulator::Run();
+    if (const bench::LivelockReport lk = bench::LivelockStatus(); lk.fired) {
+        std::cerr << std::setprecision(9) << std::fixed << "routing-bench: livelock: arm '"
+                  << proto << "' seed " << seed << ": simulated time stuck at "
+                  << lk.at.GetSeconds() << " s for " << lk.events
+                  << " events (--livelockEvents=" << P.livelockEvents << "), "
+                  << Simulator::GetEventCount()
+                  << " events in the run; a zero-time event storm like NS3-001, see "
+                     "docs/ns3-bugs.md in swarm-routing/sim-tools"
+                  << std::endl;
+        ArmIsolation::Fail(bench::kLivelockExit);
+    }
     if (g_traceDump.active) {
         // Close the legs still under way at the end of the run.
         for (uint32_t i = 0; i < g_traceDump.pos.size(); ++i) {

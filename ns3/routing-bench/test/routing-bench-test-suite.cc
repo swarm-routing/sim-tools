@@ -26,6 +26,7 @@
 #include "ns3/ipv4-raw-socket-factory.h"
 #include "ns3/ipv4-static-routing-helper.h"
 #include "ns3/ipv4.h"
+#include "ns3/livelock-watch.h"
 #include "ns3/random-variable-stream.h"
 #include "ns3/routing-bench-arm.h"
 #include "ns3/simple-channel.h"
@@ -44,6 +45,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -204,7 +206,25 @@ private:
     Ptr<Arm> m_dsdv = Registry().Make("dsdv");
 };
 
+// NS3-001's shape without ns-3's bug: from t = 2 s an event that schedules
+// itself with zero delay forever, so simulated time never moves again and
+// only the livelock watch ends the run.
+void ZeroTimeStorm() {
+    Simulator::ScheduleNow(&ZeroTimeStorm);
+}
+
+class ZeroTimeStormArm : public Arm {
+public:
+    std::string Name() const override { return "zero-time-storm"; }
+    void InstallRouting(InternetStackHelper&, RunContext&) override {}
+    int64_t AssignStreams(RunContext&, int64_t) override { return 0; }
+    void AfterAddresses(RunContext&, const Ipv4InterfaceContainer&) override {
+        Simulator::Schedule(Seconds(2), &ZeroTimeStorm);
+    }
+};
+
 Ptr<Arm> MakeSpareIfAodvArm() { return Create<SpareIfAodvArm>(); }
+Ptr<Arm> MakeZeroTimeStormArm() { return Create<ZeroTimeStormArm>(); }
 Ptr<Arm> MakeRingDsdvArm() { return Create<RingDsdvArm>(); }
 Ptr<Arm> MakeHeapChurnArm() { return Create<HeapChurnArm>(); }
 
@@ -221,15 +241,27 @@ Ptr<Arm> MakeHeapChurnArm() { return Create<HeapChurnArm>(); }
 // and beside AntHocNet's arm modules, not under test.py).
 struct ChildRun {
     std::string output;
+    std::string errors;  // stderr, with `captureStderr` only
     int status = -1;
 };
 
-std::vector<ChildRun> RunHarnessInChildren(const std::vector<std::vector<std::string>>& runs) {
+std::string Slurp(const char* path) {
+    std::ifstream in(path);
+    std::stringstream text;
+    text << in.rdbuf();
+    std::remove(path);
+    return text.str();
+}
+
+std::vector<ChildRun> RunHarnessInChildren(const std::vector<std::vector<std::string>>& runs,
+                                           bool captureStderr = false) {
     const std::size_t n = runs.size();
     std::vector<std::vector<std::string>> words(n);
     std::vector<std::vector<char*>> argvs(n);
     std::vector<std::array<char, 40>> paths(n);
+    std::vector<std::array<char, 40>> errPaths(n);
     std::vector<int> fds(n, -1);
+    std::vector<int> errFds(n, -1);
     std::vector<int> statuses(n, -1);
     for (std::size_t i = 0; i < n; ++i) {
         words[i].push_back("routing-compare");
@@ -239,6 +271,12 @@ std::vector<ChildRun> RunHarnessInChildren(const std::vector<std::vector<std::st
         std::snprintf(paths[i].data(), paths[i].size(), "/tmp/routing-bench-isolation-XXXXXX");
         fds[i] = mkstemp(paths[i].data());
         NS_ABORT_MSG_IF(fds[i] < 0, "mkstemp failed");
+        if (captureStderr) {
+            std::snprintf(errPaths[i].data(), errPaths[i].size(),
+                          "/tmp/routing-bench-stderr-XXXXXX");
+            errFds[i] = mkstemp(errPaths[i].data());
+            NS_ABORT_MSG_IF(errFds[i] < 0, "mkstemp failed");
+        }
     }
     std::cout.flush();
     std::fflush(nullptr);
@@ -248,6 +286,7 @@ std::vector<ChildRun> RunHarnessInChildren(const std::vector<std::vector<std::st
         if (pid < 0) break;  // statuses[i] stays -1
         if (pid == 0) {
             dup2(fds[i], 1);
+            if (errFds[i] >= 0) dup2(errFds[i], 2);
             const int rc =
                 RunHarness(static_cast<int>(words[i].size()), argvs[i].data(), "routing-compare");
             std::cout.flush();
@@ -262,11 +301,11 @@ std::vector<ChildRun> RunHarnessInChildren(const std::vector<std::vector<std::st
     std::vector<ChildRun> out(n);
     for (std::size_t i = 0; i < n; ++i) {
         close(fds[i]);
-        std::ifstream in(paths[i].data());
-        std::stringstream text;
-        text << in.rdbuf();
-        std::remove(paths[i].data());
-        out[i].output = text.str();
+        out[i].output = Slurp(paths[i].data());
+        if (errFds[i] >= 0) {
+            close(errFds[i]);
+            out[i].errors = Slurp(errPaths[i].data());
+        }
         out[i].status = statuses[i];
     }
     return out;
@@ -913,6 +952,127 @@ private:
     }
 };
 
+namespace {
+
+void Record(std::vector<uint32_t>* order, uint32_t k) {
+    order->push_back(k);
+}
+
+// 300 events at each of three instants, scheduled in a scrambled order; what
+// ran, in which order, and what the watch saw.
+struct SameInstantRun {
+    std::vector<uint32_t> order;
+    LivelockReport report;
+};
+
+SameInstantRun RunSameInstant(uint64_t limit) {
+    SameInstantRun out;
+    for (uint32_t k = 0; k < 900; ++k) {
+        const uint32_t at = (k * 7) % 3;
+        Simulator::Schedule(Seconds(1 + at), &Record, &out.order, k);
+    }
+    WatchForLivelock(limit);
+    Simulator::Run();
+    out.report = LivelockStatus();
+    Simulator::Destroy();
+    return out;
+}
+
+}  // namespace
+
+// NS3-001 showed in CI only as job timeouts. The livelock watch fails a run
+// once --livelockEvents events have run at one simulated instant: in the
+// simulator alone; through the harness, isolated and not, with the message CI
+// logs show; and a run it does not stop prints the same bytes as without it.
+class LivelockWatchTest : public TestCase {
+public:
+    LivelockWatchTest()
+        : TestCase("livelock watch: a zero-time storm fails fast; other runs are unchanged "
+                   "(NS3-001)") {}
+
+private:
+    void DoRun() override {
+        // The simulator alone: the watch stops the storm at its limit, at the
+        // instant it began.
+        Simulator::Schedule(Seconds(1), &ZeroTimeStorm);
+        WatchForLivelock(5000);
+        Simulator::Run();
+        const LivelockReport storm = LivelockStatus();
+        NS_TEST_ASSERT_MSG_EQ(storm.fired, true, "the storm is stopped");
+        NS_TEST_ASSERT_MSG_EQ(storm.at, Seconds(1), "at the instant time stood still");
+        NS_TEST_ASSERT_MSG_EQ(storm.events, 5000u, "after exactly --livelockEvents events");
+        NS_TEST_ASSERT_MSG_EQ(Simulator::Now(), Seconds(1), "and no later");
+        Simulator::Destroy();
+
+        // Below the limit: same events, same order, nothing stopped.
+        const SameInstantRun off = RunSameInstant(0);
+        const SameInstantRun on = RunSameInstant(300 + 1);
+        NS_TEST_ASSERT_MSG_EQ(off.order.size(), 900u, "every event ran without the watch");
+        NS_TEST_ASSERT_MSG_EQ(on.order == off.order, true, "the watch keeps the event order");
+        NS_TEST_ASSERT_MSG_EQ(on.report.fired, false, "300 events at one instant pass 301");
+        NS_TEST_ASSERT_MSG_EQ(on.report.maxAtTs, 300u, "the watch counted each instant");
+        NS_TEST_ASSERT_MSG_EQ(RunSameInstant(300).report.fired, true, "and stop at 300");
+
+        // Through the harness.
+        if (!Registry().Has("aodv")) RegisterStockArms();
+        if (!Registry().Has("zero-time-storm")) {
+            RegisterArm("zero-time-storm", "test: a zero-time event storm from t = 2 s",
+                        &MakeZeroTimeStormArm);
+        }
+        const std::vector<std::string> small{"--nNodes=8", "--time=8", "--runs=2", "--perf=0"};
+        auto with = [&small](std::vector<std::string> extra) {
+            std::vector<std::string> a = small;
+            a.insert(a.end(), extra.begin(), extra.end());
+            return a;
+        };
+        const std::vector<std::vector<std::string>> runs{
+            // 0: isolated (the default): the worker fails, the parent names the arm.
+            with({"--protocols=aodv,zero-time-storm", "--livelockEvents=100000"}),
+            // 1: in one process, at the default limit.
+            with({"--protocols=zero-time-storm", "--isolateArms=0"}),
+            // 2, 3: the stock arms with the watch at its default and off.
+            with({"--scenario=paper", "--protocols=aodv,olsr,dsdv"}),
+            with({"--scenario=paper", "--protocols=aodv,olsr,dsdv", "--livelockEvents=0"}),
+        };
+        const auto t0 = std::chrono::steady_clock::now();
+        const std::vector<ChildRun> res = RunHarnessInChildren(runs, true);
+        const double wallS =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        std::clog << "livelock watch: four harness runs in " << wallS << " s\n"
+                  << res[0].errors << res[1].errors;
+
+        const std::string line =
+            "routing-bench: livelock: arm 'zero-time-storm' seed 1: simulated time stuck at "
+            "2.000000000 s for ";
+        NS_TEST_ASSERT_MSG_NE(res[0].status, 0, "isolated: the run fails");
+        NS_TEST_ASSERT_MSG_NE(res[0].errors.find(line + "100000 events (--livelockEvents=100000)"),
+                              std::string::npos, "isolated: the worker's line");
+        NS_TEST_ASSERT_MSG_NE(res[0].errors.find("docs/ns3-bugs.md"), std::string::npos,
+                              "isolated: the pointer to the bug register");
+        NS_TEST_ASSERT_MSG_NE(
+            res[0].errors.find("arm 'zero-time-storm' failed in its own process (exit " +
+                               std::to_string(kLivelockExit)),
+            std::string::npos, "isolated: the parent names the arm");
+        NS_TEST_ASSERT_MSG_NE(res[0].output.find("##RUN## 1 aodv"), std::string::npos,
+                              "isolated: the arm before it printed its rows");
+        NS_TEST_ASSERT_MSG_EQ(WIFEXITED(res[1].status) &&
+                                  WEXITSTATUS(res[1].status) == kLivelockExit,
+                              true, "one process: exit " << kLivelockExit);
+        NS_TEST_ASSERT_MSG_NE(
+            res[1].errors.find(line + std::to_string(kDefaultLivelockEvents) + " events"),
+            std::string::npos, "one process: the line, at the default limit");
+        NS_TEST_ASSERT_MSG_EQ(res[1].output.find("##RUN## "), std::string::npos,
+                              "one process: no row for the stopped run");
+
+        NS_TEST_ASSERT_MSG_EQ(res[2].status, 0, "stock arms, watch on: clean exit");
+        NS_TEST_ASSERT_MSG_EQ(res[3].status, 0, "stock arms, watch off: clean exit");
+        NS_TEST_ASSERT_MSG_NE(res[2].output.find("##RUN## 2 dsdv"), std::string::npos,
+                              "stock arms printed their rows");
+        NS_TEST_ASSERT_MSG_EQ(res[2].output, res[3].output,
+                              "a run the watch does not stop is byte-identical");
+    }
+};
+
 class RoutingBenchTestSuite : public TestSuite {
 public:
     RoutingBenchTestSuite() : TestSuite("routing-bench", BENCH_TEST_TYPE_UNIT) {
@@ -924,6 +1084,7 @@ public:
         AddTestCase(new AodvPartitionGuardTest, BENCH_TEST_QUICK);
         AddTestCase(new DeviceStreamLayoutTest, BENCH_TEST_QUICK);
         AddTestCase(new PlacementStreamTest, BENCH_TEST_QUICK);
+        AddTestCase(new LivelockWatchTest, BENCH_TEST_QUICK);
     }
 };
 

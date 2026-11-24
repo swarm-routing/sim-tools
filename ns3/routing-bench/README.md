@@ -25,13 +25,14 @@ it depends on none of them.
 | `model/arm-isolation.h/.cc` | `--isolateArms` (default on, ns3-tools#198): every arm runs in its own worker process, forked from one zygote made before the harness allocates anything; not part of the API |
 | `model/urban-obstacle-loss-model.h/.cc` | the urban building-shadowing channel (#488, #580), Sommer et al.'s obstacle model |
 | `model/source-refusal-counter.h/.cc` | the #510 fallback that counts the sends OLSR refuses at the source |
+| `model/livelock-watch.h/.cc` | the livelock watch (`--livelockEvents`, NS3-001): a `Scheduler` decorator that stops a run once too many events have run at one simulated instant |
 | `model/icmp-error-guard-routing.h/.cc` | the ICMP no-route guard (NS3-001): a decorator around any `Ipv4RoutingProtocol` that applies nsnam/ns-3-dev!3101's suppression rules |
 | `helper/icmp-error-guard-helper.h/.cc` | `IcmpErrorGuardHelper`: wraps whatever another `Ipv4RoutingHelper` creates in the guard, and sums its counters |
 | `helper/stock-arms.h/.cc` | `RegisterStockArms()`: `aodv` (behind the ICMP no-route guard), `olsr`, `dsdv` and `hwmp` (with its 802.11s devices) |
 | `examples/routing-compare.cc` | the program |
 | `examples/anthocnet-compare.cc` | the same program under its original name (ADR-0027 §4), kept at least through v3.x |
 | `examples/CMakeLists.txt` | finds the arm modules installed beside it and generates `arms-generated.cc` (#768) |
-| `test/routing-bench-test-suite.cc` | registry rules, the stock arms, that every stock arm's rows are the same alone and after other arms and a reshaped heap, the ICMP no-route guard (nsnam/ns-3-dev!3101's test; a partitioned AODV network that livelocks on ns-3.49 unguarded and runs guarded), and that the field a seed draws does not follow the devices' stream count (swarm-routing/AntHocNet#1222) (`./test.py -s routing-bench`) |
+| `test/routing-bench-test-suite.cc` | registry rules, the stock arms, that every stock arm's rows are the same alone and after other arms and a reshaped heap, the ICMP no-route guard (nsnam/ns-3-dev!3101's test; a partitioned AODV network that livelocks on ns-3.49 unguarded and runs guarded), that the field a seed draws does not follow the devices' stream count (swarm-routing/AntHocNet#1222), and the livelock watch (a zero-time storm fails fast, isolated and not; the stock arms' output is byte-identical with it on and off) (`./test.py -s routing-bench`) |
 
 The other arms live in their own modules, each in one
 `helper/<module>-bench-arms.cc`: `anthocnet`, `aomdv`, `gpsr` (`gpsr`, `gpcr`,
@@ -86,6 +87,66 @@ byte-identical to unguarded AODV. On ns-3.49 a run that did finish can still
 move: the errors !3101 suppresses are no longer sent. The guard is generic
 over any `Ipv4RoutingHelper`; an AODV-derived arm in another module can wrap
 its own helper the same way.
+
+## Failing fast on a livelock (`--livelockEvents`)
+
+NS3-001 showed in CI only as job timeouts: an unguarded AODV-family run on
+ns-3.49 spins at one simulated instant for as long as the job lets it (a SAGIN
+`gpsr3d` run went past 17 minutes). The harness now stops such a run itself.
+`model/livelock-watch.h` installs, just before `Simulator::Run()`, a
+`Scheduler` that forwards every call to the scheduler the simulator would
+have used (`SchedulerType`, `MapScheduler` by default) and counts, in
+`RemoveNext`, the events taken at the current timestamp. When that count
+reaches `--livelockEvents` (default 1000000; 0 turns it off) it calls
+`Simulator::Stop()`, and `RunOne` prints one line on stderr and exits 70:
+
+```
+routing-bench: livelock: arm 'aodv-bare' seed 1: simulated time stuck at 4.894679984 s for 1000000 events (--livelockEvents=1000000), 1004694 events in the run; a zero-time event storm like NS3-001, see docs/ns3-bugs.md in swarm-routing/sim-tools
+```
+
+Under `--isolateArms` (the default) the arm's worker exits 70 and the parent
+aborts with `arm '<arm>' failed in its own process (exit 70; its error is
+above)`; with `--isolateArms=0` the process exits 70. The stopped run prints
+no row.
+
+Why a scheduler: a storm at one instant never lets a check scheduled for a
+later time run, and ns-3 has no public per-event hook, but every event the
+simulator runs passes through its scheduler's `RemoveNext`. Every ns-3
+scheduler orders events by (timestamp, uid), and the simulator assigns both,
+so the wrapped scheduler hands out the same events in the same order: a run
+the watch does not stop is byte-identical to the run without it (the suite
+compares the stock arms' whole output with the watch on and off). The limit
+is an event count, not a wall clock, so whether a seed stops is
+deterministic too, and the line goes to stderr, never into a marker. The
+cost is one virtual call and a comparison per event: on ns-3.49 debug,
+`--scenario=paper --time=20 --runs=2` over `aodv,olsr,dsdv` (6.1 M events)
+took 181.4 s of CPU with the watch off and 185.6 s on (three interleaved
+runs each, 176 to 193 s), within the run-to-run noise, and printed the same
+bytes apart from `##PERF##` in all three pairs.
+
+The watch covers every arm `routing-compare` runs, the vendored AOMDV/GPSR
+family's included. A harness with its own `main` (AntHocNet's satellite
+programs) gets the same by calling `bench::WatchForLivelock(limit)` before
+`Simulator::Run()` and checking `bench::LivelockStatus()` after it.
+
+The default, 1000000, is three orders of magnitude above the most events any
+scenario ran at one instant (the watch's `maxAtTs`, ns-3.49, arms `aodv`,
+`olsr`, `dsdv`; the full scenarios at their own lengths):
+
+| scenario | seeds | most events at one instant |
+|---|---|---|
+| default (no `--scenario`) | 2 | 117 |
+| `paper` | 2 | 313 |
+| `thesis` (100 nodes, 900 s) | 1 | 843 |
+| `fanet` | 2 | 212 |
+| `vanet` | 1 | 562 |
+
+An unguarded stock AODV run on ns-3.49's sparse field
+(`--nNodes=16 --area=500 --range=100`, the ns3-containers `sparse-aodv`
+canary's shape) stops at 4.89 s of simulated time, seed 1, after 46 s of wall time on the
+debug build (1000000 ICMP-storm events; the storm costs about 45 µs per event
+there), where it used to run until the job's timeout; the guarded
+`aodv` arm runs the same three seeds to the end without tripping it.
 
 ## The same field on every ns-3 release (stream layout)
 

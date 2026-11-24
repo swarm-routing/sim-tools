@@ -81,6 +81,10 @@ public:
     static void WorkerBeginOutput();
     /// Worker: send the arm's aggregates, flush stdout and _exit(0).
     [[noreturn]] static void WorkerFinish(const std::string& payload);
+    /// Worker or not: flush, write a coverage build's counters and _exit(code),
+    /// skipping the exit handlers of a simulation stopped mid-run (the
+    /// livelock watch). The parent reports a worker's exit status.
+    [[noreturn]] static void Fail(int code);
 
 private:
     int m_req = -1;      ///< parent -> zygote: arm names
