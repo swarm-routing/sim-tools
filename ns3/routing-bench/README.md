@@ -184,7 +184,9 @@ What it does not do. A protocol that keeps state across an interface down
 keeps it across a `crash`. Stock OLSR's `NotifyInterfaceDown` is empty, so its
 tables outlive the crash and only time out. Stock AODV does not restart its
 hello timer in `NotifyInterfaceUp`, so a restarted AODV node finds routes by
-RREQ but sends no hellos. Wiping a protocol's own state needs its lifecycle:
+RREQ but sends no hellos (NS3-004,
+[swarm-routing/sim-tools#362](https://github.com/swarm-routing/sim-tools/issues/362);
+[`docs/ns3-bugs.md`](../../docs/ns3-bugs.md)). Wiping a protocol's own state needs its lifecycle:
 ns3-tools#150, on swarm-core's `SwarmLifecycleHelper`.
 
 Rules, checked before any run (each refusal names `<file>:<line>`):
