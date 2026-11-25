@@ -26,6 +26,7 @@ test: ## the fast tests CI runs on every PR
 	for t in tools/checks/tests/test_*.py; do python3 "$$t" || exit 1; done
 	python3 -I tools/checks/check-refs.py docs/ns3-bugs.md docs/ns3-rcapa/
 	python3 -I tools/checks/check-scenarios.py
+	python3 -I tools/checks/check-published-paths.py
 	python3 -I tools/checks/check-python-boundary.py
 
 lint: org-tools ## static checks, no changes

@@ -39,9 +39,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0  # check-published-paths.py diffs against origin/main from the merge base
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
+      # sim-tools#376, ADR-0002: a published path is never moved or deleted
+      # without a new ADR. No docs-only skip: the table and the paths are docs.
+      - name: Published paths are not moved or deleted
+        run: |
+          python3 -I tools/checks/tests/test_check_published_paths.py
+          python3 -I tools/checks/check-published-paths.py --base origin/main
       - name: Self-tests (fixtures)
         if: steps.changes.outputs.docs-only != 'true'
         run: for t in python/tests/test_*.py; do echo "== $t"; python3 "$t"; done

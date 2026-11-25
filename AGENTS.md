@@ -27,7 +27,7 @@ ns3/routing-bench/  the comparison harness module `routing-bench` (moved from An
 ns3/patches/NS3-NNN/ patches to upstream ns-3's own source, one per ns-3 bug (docs/ns3-bugs.md): the patch, apply.sh (decided from the source; prints not-affected | applied | already-fixed | refused), the reproducer, test.sh (ns3.yml's ns3-patches job); ns3/patches/apply.sh runs them all, README.md is the convention (#378); NS3-001 (nsnam/ns-3-dev!3101, from the vcpkg ns3 port), NS3-005 — GPL-2.0-only
 ns3/arms/<name>/    (planned) non-swarm comparator arms, one contrib module each (epic #15) — GPL-2.0-only
 ns3/                (planned) the probe module (#40), the satellite harnesses on the arm registry (#5) — GPL-2.0-only
-tools/checks/       CI scripts (check-scenarios.py, the family catalogue complete and agreeing with scenario_check, #55; check-scenario-configs.sh, every cell's routing-compare ##CONFIG## equal to its preset, #55; check-stock-arms.sh; arm-delivers.sh, its verdict read through the reader, #6; check-perf-markers.sh, the ##PERF## line, #91; check-scaffold-arm.sh, the arm `ns3-tool scaffold` writes, #39; check-refs.py, every reference in the ns-3 bug register fully qualified, #247; check-python-boundary.py, the agnostic modules of python/ns3_tool import no ns-3-bound one and name no ns-3 path or program, per docs/layout.md "Python modules", #377; tests/: their Python tests, measured with python/'s by ns3.yml's python-quality for SonarQube Cloud) — MIT OR GPL-2.0-only
+tools/checks/       CI scripts (check-scenarios.py, the family catalogue complete and agreeing with scenario_check, #55; check-scenario-configs.sh, every cell's routing-compare ##CONFIG## equal to its preset, #55; check-stock-arms.sh; arm-delivers.sh, its verdict read through the reader, #6; check-perf-markers.sh, the ##PERF## line, #91; check-scaffold-arm.sh, the arm `ns3-tool scaffold` writes, #39; check-refs.py, every reference in the ns-3 bug register fully qualified, #247; check-python-boundary.py, the agnostic modules of python/ns3_tool import no ns-3-bound one and name no ns-3 path or program, per docs/layout.md "Python modules", #377; check-published-paths.py, no published path of docs/layout.md moved or deleted, #376; tests/: their Python tests, measured with python/'s by ns3.yml's python-quality for SonarQube Cloud) — MIT OR GPL-2.0-only
 tools/release/      dist.sh: the release assets (routing-bench tarball, ns3-tool wheel + sdist), each checked; `make dist` — MIT OR GPL-2.0-only
 .cz.toml            Commitizen config; releases run through .github/workflows/release.yml (the org reusable-release.yml, #26)
 python/ns3_tool/    `ns3-tool` (cli: compare = bench_parse, sweep = a port of AntHocNet's run-scenarios.py, diagnose = the drop book + scenario_check results, scaffold = an arm module skeleton; #39), the readers and statistics (bench_parse, stats_util, native/comparator views, pool_runs, sweep_summary), the plausibility checker (scenario_check: ns3-scenario-check, anchors from an --anchors file) and the campaign driver (campaign: ns3-campaign; change_plan: the change-test plans it routes, #81), stdlib only (PyYAML only to read a .yaml plan) — MIT OR GPL-2.0-only
@@ -108,6 +108,11 @@ swarm-routing/vcpkg-registry (one vcpkg port per simulator folder: `ns3/` is
 swarm-routing/vcpkg-registry#76). `make dist`
 builds the assets locally (`DIST_CHECK=0` skips the docker suite and the
 wheel check).
+
+Never move or delete a path in `docs/layout.md` "Published paths" without a
+new accepted ADR: `tools/checks/check-published-paths.py` (`make test`, CI's
+`python.yml`) fails the PR naming the path and its consumer (#376). (The org
+sync owns "Agent pitfalls", so the pointer lives here.)
 
 A reader change must keep its output byte-identical on the fixtures unless the
 change is the point (then say so in the PR and update AntHocNet's callers).
