@@ -184,6 +184,50 @@ gets all of its device streams from the device sub-block instead. So:
 No two consumers share a stream: the running counter aborts before it
 reaches the device sub-block, the device sub-block before the applications.
 
+## What the oracle bound answers (#8)
+
+The `oracle` arm (its own module, still AntHocNet's `ns3/oracle/` until #34)
+routes on the topology it knows, not on a protocol, so it is the control a
+real arm is measured against. Its bound is not the same on every channel,
+and the limit is accepted, not open: the maintainer chose to state it
+(2026-11-24, #8 direction 3) rather than redefine the oracle.
+
+| Question | Wired, ISL torus, `range` disk (`approx=0`) | `tworay` (`approx=1`) | `nakagami` (`approx=1`) |
+|---|---|---|---|
+| Delivery: oracle PDR >= every arm's | bound | bound | bound |
+| Path length: oracle `##COMMON##` hops <= every arm's | bound on a static field; not on a moving one (below) | not quotable (hop bound quotable only at `approx=0`) | not quotable |
+| Latency (`##COMMON##` delay) | bound | quotable under AntHocNet's published rule (danieljoppi/AntHocNet#424, danieljoppi/AntHocNet#427) | not a bound: 12–30 ms slower in the mean and 880–1230 ms worse at p99 than AntHocNet, on identical packets |
+
+The `approx=1` columns fall back to a geometric disk (`LinkRangeM`), which
+misses links the radio has and admits deeply faded ones. On moving fields
+(RWP grid, FANET, VANET) the matched-hop bound fails whatever adjacency rule
+replaces the disk, while the delivery bound holds on every family.
+
+`ns3-scenario-check` enforces the same scope per seed
+(`python/ns3_tool/scenario_check.py`, `ORACLE_COMMON_HOP_EPS` and
+`ORACLE_COMMON_HOP_DEFECT`):
+
+- the delivery bound is checked on every cell;
+- the matched-hop bound FAILs at an excess over 0.05 hops wherever the oracle's
+  mode claims it (wired, disk, decode-approx, and any unknown mode);
+- on a `p50-approx` (Nakagami) seed an excess up to 0.15 hops is a WARN, the
+  honest residual of a probabilistic link; a larger one still FAILs;
+- on a 3-D field (FANET, `z` > 0) or a moving Manhattan grid (VANET,
+  `mobility=manhattan` with `speed` > 0), a seed's excess over 0.05 hops skips
+  the per-seed check whatever its size, and the file gets one WARN instead:
+  the check's premise does not hold there.
+
+So quote the oracle for the delivery decomposition everywhere, for path
+length only at `approx=0` on a static field, and for latency at `approx=0`
+and on `tworay`. Two ways to lift the limit were left
+undone on purpose, because each changes what the bound means: adjacency
+observed from links the PHY actually delivered on (bounded by the same
+channel realisation as the arms), or an ETX-weighted graph (expected
+transmissions instead of hop count). A link-budget rule (`Prx >=
+RxSensitivity` on `tworay`) was tried and refuted: it made 2440 of 2450
+edges adjacent and its "upper bound" delivered 30.4 % PDR, below every arm it
+bounds (danieljoppi/AntHocNet#431, AntHocNet's `ns3/oracle/README.md`).
+
 ## Registering an arm
 
 Registration is an explicit call, never a static initialiser (ADR-0027 §3).
