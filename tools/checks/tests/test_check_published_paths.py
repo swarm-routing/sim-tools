@@ -255,6 +255,41 @@ write(root, "docs/adr/0003-move.md", ADR)
 commit(root)
 expect("punctuated citation exempted a tail path", verdict(root)[0] == 1)
 
+# a cited child under a parent whose name holds @ does not exempt the parent row
+root = scratch()
+run(root, "rm", "-rq", "ns3/routing-bench")
+write(
+    root,
+    "docs/layout.md",
+    LAYOUT.replace("| `ns3/routing-bench/` | the org image workflows |\n", "")
+    + "Retired by ADR-0003: `ns3/routing-bench/@generated/a.cc`.\n",
+)
+write(root, "docs/adr/0003-move.md", ADR)
+commit(root)
+expect("@ child citation exempted its parent", verdict(root)[0] == 1)
+
+# an exact citation of a path holding + exempts it
+plus = "tools/check+run.sh"
+row = f"| `{plus}` | a consumer |\n"
+root = tempfile.mkdtemp()
+run(root, "init", "-q", "-b", "main")
+run(root, "config", "user.email", "t@example.org")
+run(root, "config", "user.name", "t")
+write(root, "docs/layout.md", LAYOUT.replace("\n## Where", row + "\n## Where"))
+write(root, "docs/adr/0002-layout.md", "- **Status:** Accepted\n")
+write(root, plus)
+write(root, "ns3/routing-bench/model/a.cc")
+write(root, "tools/checks/check-stock-arms.sh")
+run(root, "add", ".")
+run(root, "commit", "-qm", "base")
+run(root, "branch", "base")
+run(root, "checkout", "-qb", "work")
+run(root, "rm", "-q", plus)
+write(root, "docs/layout.md", LAYOUT + f"Retired by ADR-0003: `{plus}`.\n")
+write(root, "docs/adr/0003-move.md", ADR)
+commit(root)
+expect("exact + citation failed", verdict(root)[0] == 0)
+
 # a table with no rows, and an unknown base, are refused
 root = scratch()
 write(root, "docs/layout.md", "# Layout\n")
