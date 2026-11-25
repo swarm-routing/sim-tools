@@ -1,6 +1,6 @@
 # 0002. Classify sim-tools by simulator folder and kind, in place; freeze published paths; ship one package per simulator and kind
 
-- **Status:** proposed
+- **Status:** Accepted (2026-11-25, maintainer), option "classify in place, no published-path moves" as proposed
 - **Date:** 2026-11-25
 - **Issue:** #375
 
@@ -48,7 +48,9 @@ swarm-routing/vcpkg-registry `ports/ns3/patches/`, applied by self-detection
 (not affected / apply / already fixed / refuse) in that portfile. A first
 `ns3/patches/NS3-NNN/` (NS3-005, #374) is being added on a branch. The
 register and the RCAPAs (`docs/ns3-bugs.md`, `docs/ns3-rcapa/`) live here.
-The images stay stock (maintainer, 2026-11-23).
+The images stayed stock (maintainer, 2026-11-23) until the 2026-11-25
+decision below, which adds a patched variant beside them for self-detecting
+patches.
 
 **The marker contract spans the harness and the readers.** `docs/markers.md`
 (contract v1, golden rule 11) is printed by `routing-compare` and read by
@@ -92,10 +94,12 @@ image side of `campaign` / `change_plan` are ns-3-bound (`docs/layout.md`
    and a self-detection rule run by one runner that prints exactly one of
    `not-affected | applied | already-fixed | refused` (refused fails the
    build): the vcpkg `ns3` portfile's four outcomes, held in one place. The
-   patch set is released as its own asset (#379); the vcpkg `ns3` port takes it
-   from there instead of keeping its own copy (#380); a patched image is only
-   ever an additional variant beside the stock one, and only on a maintainer
-   decision (#381).
+   patch set is released as its own asset (#379); the vcpkg `ns3` port
+   downloads that released `sim-tools-ns3-patches` asset, one source of truth,
+   with no vendored copies (#380); patched `ns3-dev` images exist as a separate
+   variant beside the stock tags, which stay available for comparison, and
+   apply only self-detecting patches (first case: the NS3-005 AODV lifetime
+   overflow, #374) (#381).
 4. **One Python distribution, with a checked boundary.** `swarm-sim-tools`
    stays one distribution and `ns3_tool` keeps its module paths; the
    agnostic / ns-3 split is recorded per module and checked (an agnostic
@@ -106,7 +110,7 @@ image side of `campaign` / `change_plan` are ns-3-bound (`docs/layout.md`
 
    | Package | From | Channel | Contract (SemVer applies to) |
    |---------|------|---------|------------------------------|
-   | `sim-tools-ns3` (C++ modules of `ns3/`) | `routing-bench-<ver>.tar.gz` today; `sim-tools-ns3-<ver>.tar.gz` once `ns3/` holds a second module (#382) | release asset, vcpkg port `sim-tools-ns3`, git path `@<commit>:ns3/routing-bench` | `routing-compare` options, marker contract v1, the arm registration API (`routing-bench-arm.h`), the stock arms' names |
+   | `sim-tools-ns3` (C++ modules of `ns3/`) | release asset `sim-tools-ns3-<ver>.tar.gz`; `routing-bench-<ver>.tar.gz` kept until no lock names it (#382) | release asset, vcpkg port `sim-tools-ns3`, git path `@<commit>:ns3/routing-bench` | `routing-compare` options, marker contract v1, the arm registration API (`routing-bench-arm.h`), the stock arms' names |
    | `sim-tools-ns3-patches` (planned, #379) | `ns3/patches/` | release asset; the vcpkg `ns3` port | each patch's ID and its outcome per ns-3 release; adding or retiring a patch is a minor release |
    | `swarm-sim-tools` (Python) | `python/` | PyPI, release assets | console scripts and options, reader output byte-identical on the fixtures, marker contract v1 |
    | data: `scenarios/`, `campaigns/` | the tree | not packaged; read at a checkout or pinned commit | a preset's meaning (rule 11); a plan, once dispatched, never changes |
@@ -166,20 +170,21 @@ image side of `campaign` / `change_plan` are ns-3-bound (`docs/layout.md`
 - A published path is moved only by a new ADR listing each consumer and its
   migration, so the cost is paid knowingly.
 - The vcpkg `ns3` port gains a dependency on this repository's releases for
-  its patches (#380), or keeps verified copies; one of the two is chosen in
-  that issue.
+  its patches (#380); it keeps no copies.
 - Ruled out: a second marker contract per simulator; patches applied silently
   (every outcome is printed and a mismatch fails); a patched image replacing a
-  stock tag.
+  stock tag (the patched variant sits beside it).
 
-### Decisions for the maintainer
+### Decisions (maintainer, 2026-11-25)
 
-1. Accept this ADR as written, or amend it (in particular whether rejected
-   alternative A, a one-time rename, is worth its cost to you).
-2. #380: the `ns3` port downloads the released patch set, or keeps copies that
-   `port_bump.py` verifies.
-3. #381: whether any image ships patched (this reverses nothing if the answer
-   is no: the stock images stay as decided on 2026-11-23).
-4. The asset name for the multi-module ns-3 tarball (#382): proposed
-   `sim-tools-ns3-<ver>.tar.gz`, with `routing-bench-<ver>.tar.gz` kept until
-   no lock names it.
+1. Accepted as proposed: classify in place, no published-path moves (rejected
+   alternative A, a one-time rename, stays rejected).
+2. #380: the vcpkg `ns3` port downloads the released `sim-tools-ns3-patches`
+   asset (one source of truth); no vendored copies.
+3. #381: patched `ns3-dev` images exist as a separate variant beside the stock
+   tags (stock stays available for comparison), applying only self-detecting
+   patches. This reverses the 2026-11-23 "images stay stock" decision for such
+   patches; first case: the NS3-005 AODV lifetime overflow, being added on
+   branch `claude/ns3-005-aodv-lifetime-overflow`.
+4. #382: release asset `sim-tools-ns3-<ver>.tar.gz`;
+   `routing-bench-<ver>.tar.gz` kept until no lock names it.

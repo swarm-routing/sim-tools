@@ -7,4 +7,4 @@ changes is superseded by a new ADR, not edited. Start from
 | ADR | Decision |
 |-----|----------|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions |
-| [0002](0002-sim-tools-layout-and-packages.md) | Classify by simulator folder and kind, in place; freeze published paths; one package per simulator and kind (proposed) |
+| [0002](0002-sim-tools-layout-and-packages.md) | Classify by simulator folder and kind, in place; freeze published paths; one package per simulator and kind (accepted) |

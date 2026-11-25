@@ -2,7 +2,7 @@
 
 Where everything in sim-tools lives, classified by **simulator** and by
 **kind**, how each part ships and who consumes it. The decision behind it is
-[ADR-0002](adr/0002-sim-tools-layout-and-packages.md) (**proposed**, epic
+[ADR-0002](adr/0002-sim-tools-layout-and-packages.md) (**accepted** 2026-11-25, epic
 #375): classify in place, never move a published path, put new work under
 `<simulator>/<kind>/`. Rows marked *(planned)* do not exist yet; the issue
 that adds one moves its row to current.
@@ -45,7 +45,7 @@ Licence column: **GPL** is `GPL-2.0-only`, **dual** is `MIT OR GPL-2.0-only`
 | `ns3/routing-bench/` (`model/routing-bench-{arm,harness,run,internal}`, `source-refusal-counter`, `urban-obstacle-loss-model`, `livelock-watch`; `helper/stock-arms`; `examples/`; `test/`) | ns-3 | harness | GPL | `routing-bench-<ver>.tar.gz` → vcpkg port `sim-tools-ns3`; git path `sim-tools@<ref>:ns3/routing-bench` | sim-containers protocol image (`docker/protocol/Dockerfile` `ROUTING_BENCH_SPEC`, `tools/protocol_images.py`), sim-containers `test/downstream.txt` (`@main`); swarm-routing/.github `reusable-ns3-image.yml` and `reusable-benchmark-cell.yml` `dependencies:` (every protocol's CI and cells); campaign plans' `modules`; arm modules in protocol repos (`helper/<m>-bench-arms.cc`, `${librouting-bench}`); AntHocNet (`ns3-tools.lock`, its tooling) |
 | `ns3/routing-bench/{model/icmp-error-guard-routing,helper/icmp-error-guard-helper}.*` | ns-3 | workaround (NS3-001) | GPL | inside the harness tarball | the `aodv` stock arm; AODV-derived protocol arms (`reusable-ns3-image.yml`) |
 | `ns3/routing-bench/model/arm-isolation.*` | ns-3 | workaround (NS3-002: `--isolateArms` default on) and harness | GPL | inside the harness tarball | every comparison run |
-| `ns3/patches/<ID>/` *(planned, #378; NS3-005 on its branch, #374)* | ns-3 | patch | GPL | `sim-tools-ns3-patches-<ver>.tar.gz` *(planned, #379)* | vcpkg `ns3` port *(#380; NS3-001's patch is in swarm-routing/vcpkg-registry `ports/ns3/patches/` today)*; a patched image variant only on a maintainer decision (#381) |
+| `ns3/patches/<ID>/` *(planned, #378; NS3-005 on its branch, #374)* | ns-3 | patch | GPL | `sim-tools-ns3-patches-<ver>.tar.gz` *(planned, #379)* | vcpkg `ns3` port, which downloads the released asset and keeps no copies *(#380; NS3-001's patch is in swarm-routing/vcpkg-registry `ports/ns3/patches/` today)*; the patched `ns3-dev` image variant beside the stock tags, self-detecting patches only *(#381; first case NS3-005)* |
 | `ns3/arms/<name>/` *(planned, epic #15)* | ns-3 | arm | GPL | in the ns-3 tarball (#382) | campaigns, the guide |
 | `ns3/probes/` *(planned, #40)* | ns-3 | probe | GPL | in the ns-3 tarball (#382) | any ns-3 program |
 | `omnetpp/` *(planned, #383)* | OMNeT++ | as `ns3/` | decided in its PR | `sim-tools-omnetpp` | swarm-routing/swarm-adapter-omnet |
@@ -96,7 +96,7 @@ Every package is released under the repository's single `vX.Y.Z` tag
 | Package | Built from | Channel | Status |
 |---------|------------|---------|--------|
 | `sim-tools-ns3` | `ns3/routing-bench/` as `routing-bench-<ver>.tar.gz` | release asset, vcpkg port, git path | current |
-| `sim-tools-ns3` (every `ns3/` module) | `sim-tools-ns3-<ver>.tar.gz` | release asset, vcpkg port | *(planned, #382)* |
+| `sim-tools-ns3` (every `ns3/` module) | `sim-tools-ns3-<ver>.tar.gz` (name decided 2026-11-25; `routing-bench-<ver>.tar.gz` kept until no lock names it) | release asset, vcpkg port | *(planned, #382)* |
 | `sim-tools-ns3-patches` | `ns3/patches/` | release asset; vcpkg `ns3` port | *(planned, #379, #380)* |
 | `swarm-sim-tools` | `python/` | PyPI, release assets | current |
 | `sim-tools-omnetpp`, `sim-tools-omnetpp-patches` | `omnetpp/` | as ns-3 | *(planned, #383)* |
