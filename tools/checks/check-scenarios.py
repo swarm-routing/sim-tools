@@ -238,6 +238,16 @@ class Checker:
             floors = anchor.get("floors", {})
             if not floors:
                 self.bad(aw, "no floors")
+            # Every floor is one `results --anchor` enforces: one <stem>_pdr_min
+            # and, beside it, <stem>_oracle_hops_min / _max (none ignored).
+            pdr = [k for k in floors if k.endswith(scenario_check.ANCHOR_SUFFIX)]
+            if len(pdr) != 1:
+                self.bad(aw, f"floors: exactly one *{scenario_check.ANCHOR_SUFFIX} key, got {pdr}")
+            else:
+                stem = pdr[0][: -len(scenario_check.ANCHOR_SUFFIX)]
+                hops = {stem + s for s in scenario_check.ORACLE_HOPS_SUFFIXES}
+                for key in sorted(set(floors) - {pdr[0]} - hops):
+                    self.bad(aw, f"floors.{key}: results --anchor does not enforce it")
             for key, value in floors.items():
                 if isinstance(value, bool) or not isinstance(value, (int, float)):
                     self.bad(aw, f"floors.{key} is not a number")

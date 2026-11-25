@@ -22,12 +22,20 @@ keeps the two in agreement.
 
 ## Using it
 
+From the root of a checkout of this repository:
+
 ```bash
-ns3-scenario-check preflight --family fanet --cell fanet-sparse      # a cell's preflight
+ns3-scenario-check preflight --family fanet --cell fanet-sparse --catalogue scenarios   # a cell's preflight
 ns3-scenario-check results CELL.txt --anchors scenarios/fanet/anchors.toml --anchor fanet-single-hop-3d
-ns3-tool sweep /opt/ns-3 --family vanet --runs 20 --protocols aodv,olsr,dsdv   # the family's cells
-python3 tools/checks/check-scenarios.py                              # the catalogue is complete
+ns3-tool sweep /opt/ns-3 --family vanet --catalogue scenarios --runs 20 --protocols aodv,olsr,dsdv   # the family's cells
+python3 tools/checks/check-scenarios.py                                                 # the catalogue is complete
 ```
+
+`results --anchor NAME` checks the anchor's PDR floor on the
+`--anchor-arms` rows. It also checks the anchor's oracle hop bounds on the
+oracle arm's rows (`--oracle`, or the arm that writes the file's
+`##ORACLE##` rows). When no input has an oracle row, it WARNs that the hop
+bounds went unchecked.
 
 The readers look for the catalogue in this order:
 1. `--catalogue DIR`;
@@ -78,7 +86,7 @@ Cell names are unique across the catalogue.
 | `flags`, `arms` | the anchor cell's routing-compare flags on top of the preset, and the arms its floors judge (`--anchor-arms`) |
 | `expected`, `measured`, `margin` | what the anchor expects, what was measured, and why the floor sits where it does |
 | `source` | the citation (a literature anchor links its paper: `https://doi.org/<DOI>`, or the publisher's page) or the derivation |
-| `floors` | `key = number`: the floors `ns3-scenario-check results --anchors` reads, under the keys of AntHocNet's `ns3/tools/anchors.yml`; unique across the catalogue |
+| `floors` | `key = number`, under the keys of AntHocNet's `ns3/tools/anchors.yml`, unique across the catalogue. Exactly one `<stem>_pdr_min`, and optionally `<stem>_oracle_hops_min` / `<stem>_oracle_hops_max`: the floors `ns3-scenario-check results --anchor` enforces. check-scenarios.py refuses any other key, so no declared floor goes unchecked |
 
 ## Adding a family
 
@@ -88,9 +96,23 @@ Cell names are unique across the catalogue.
    first.
 2. Add the family to the table above.
 3. Run `python3 tools/checks/check-scenarios.py`; it must print `ok`.
-4. Check the preset against the harness. `--commands` prints each cell's
-   arguments. Run each line through routing-compare into `DIR/<cell>.txt`,
-   then run `--configs DIR`, which compares the `##CONFIG##` lines.
+4. Check the preset against the harness. `--commands` prints one line per
+   cell: the cell name, a TAB, then routing-compare's arguments for a
+   1-second run. Run each line's arguments into `DIR/<cell>.txt`. Then
+   `--configs DIR` compares each file's `##CONFIG##` line with the
+   catalogue. From the checkout root, with routing-bench built into the
+   image's tree at `/opt/ns-3`:
+
+   ```bash
+   mkdir -p configs
+   python3 tools/checks/check-scenarios.py --commands > configs/commands.tsv
+   docker run --rm -v "$PWD:/src" ghcr.io/swarm-routing/ns3-dev:latest-debug bash -c \
+     'ns3-build-contrib routing-bench=/src/ns3/routing-bench && cd /opt/ns-3 &&
+      while IFS=$'"'"'\t'"'"' read -r cell args; do
+        ./ns3 run "routing-compare $args" > "/src/configs/$cell.txt"
+      done < /src/configs/commands.tsv'
+   python3 tools/checks/check-scenarios.py --configs configs
+   ```
 
 ## Provenance
 

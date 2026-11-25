@@ -436,6 +436,50 @@ def csv_arms(spec):
     return tuple(x for x in (spec or "").split(",") if x)
 
 
+ORACLE_HOPS_SUFFIXES = ("_oracle_hops_min", "_oracle_hops_max")
+
+
+def anchor_hop_bounds(key, anchors):
+    """ns3-tools#55: the oracle hop bounds an anchor declares beside its PDR
+    floor, {key: value} for <stem>_oracle_hops_min / _oracle_hops_max
+    (the keys of AntHocNet's anchors.yml: an analytic anchor's geometry fixes
+    the shortest path's mean hop count)."""
+    stem = key[: -len(ANCHOR_SUFFIX)]
+    return {stem + s: anchors[stem + s] for s in ORACLE_HOPS_SUFFIXES if stem + s in anchors}
+
+
+def check_anchor_hops(path, rows, anchor, bounds):
+    """The --anchor's oracle hop bounds on the oracle arm's rows of PATH;
+    returns how many rows were judged (0: the file has no oracle row)."""
+    with open(path) as fh:
+        oracle = oracle_arm(fh.read())
+    judged = 0
+    for r in rows:
+        if oracle is None or r["proto"] != oracle:
+            continue
+        try:
+            hops = float(r.get("hops"))
+        except (TypeError, ValueError):
+            continue
+        judged += 1
+        tag = f"{r['where']}/{r['proto']}"
+        for bound_key, bound in sorted(bounds.items()):
+            low = bound_key.endswith("_min")
+            if (hops < bound) if low else (hops > bound):
+                report(
+                    "FAIL",
+                    f"{tag}: anchor '{anchor}' oracle hops {'floor' if low else 'ceiling'} "
+                    f"{bound} violated (hopsMean {hops}) — the cell's geometry is not "
+                    "the one the anchor derives; do not trust these numbers",
+                )
+            else:
+                print(
+                    f"ok: {tag}: anchor '{anchor}' oracle hops "
+                    f"{'floor' if low else 'ceiling'} {bound} met (hopsMean {hops})"
+                )
+    return judged
+
+
 def set_roles(a):
     """Bind the arm roles and the hold ceilings from the command line. getattr
     keeps callers that build their own namespace (the self-test) working."""
@@ -2861,7 +2905,10 @@ def cmd_results(a):
     anchor = getattr(a, "anchor", None)
     if anchor and not anchors_path:
         sys.exit("FAIL: --anchor needs --anchors FILE (the floors are data, not code)")
-    floor = anchors[anchor_key(anchor, anchors)] if anchor else None
+    key = anchor_key(anchor, anchors) if anchor else None
+    floor = anchors[key] if key else None
+    hop_bounds = anchor_hop_bounds(key, anchors) if key else {}
+    hops_checked = 0
     sat_floor = anchors.get(SAT_SINGLE_ISL_KEY)
     # The arms an anchor floor judges; none named = every row.
     anchor_arms = csv_arms(getattr(a, "anchor_arms", None))
@@ -3363,6 +3410,16 @@ def cmd_results(a):
                     )
                 else:
                     print(f"ok: {tag}: anchor '{anchor}' floor {floor} met ({arm} PDR {pdr})")
+        if hop_bounds:
+            hops_checked += check_anchor_hops(path, rows, anchor, hop_bounds)
+    if hop_bounds and not hops_checked:
+        report(
+            "WARN",
+            f"anchor '{anchor}' declares oracle hop bound(s) "
+            f"({', '.join(sorted(hop_bounds))}), but no input has a row of the oracle "
+            "arm (--oracle, or a file's ##ORACLE## rows): not checked; run the anchor "
+            "cell with the oracle arm (ns3-tools#55)",
+        )
     if n == 0:
         report("FAIL", "no result rows parsed from the input")
     else:

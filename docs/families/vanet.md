@@ -108,10 +108,13 @@ docker run --rm --cpus 2 -v "$PWD:/src:ro" ghcr.io/swarm-routing/ns3-dev:latest-
 ```
 
 Add `--nNodes=40` for vanet-sparse. `ns3-tool sweep` runs both cells by
-name:
+name. Run it, and the `ns3-scenario-check` commands below, from the root of
+a checkout of this repository: `--catalogue scenarios` names the catalogue
+there. An installed package does not carry the catalogue, so without
+`--catalogue DIR` or `$NS3_TOOL_SCENARIOS` it stops with `no catalogue at ...`.
 
 ```bash
-ns3-tool sweep /opt/ns-3 --family vanet --runs 20 --protocols aodv,olsr,dsdv --dry-run
+ns3-tool sweep /opt/ns-3 --family vanet --catalogue scenarios --runs 20 --protocols aodv,olsr,dsdv --dry-run
 ```
 
 ```text
@@ -122,7 +125,7 @@ ns3-tool sweep /opt/ns-3 --family vanet --runs 20 --protocols aodv,olsr,dsdv --d
 ## 4. Preflight
 
 ```bash
-ns3-scenario-check preflight --family vanet --cell vanet-main
+ns3-scenario-check preflight --family vanet --cell vanet-main --catalogue scenarios
 ```
 
 On a road network, nodes live on the 1-D edges of a 2-D grid. So the
@@ -146,6 +149,11 @@ Both anchors are **analytic**. Each shrinks the preset to one
 |---|---|---|---|
 | **vanet-single-hop** | `--scenario=vanet --nNodes=20 --area=280 --blocksX=1 --blocksY=1 --streetWidth=279 --flows=4 --time=120 --runs=2` | A 279 m street leaves a 1 m building. The 396 m block diagonal is inside the 423.3 m decode radius, so every flow is one hop: PDR about 100 %, oracle hopsMean about 1.00. | `vanet_single_hop_pdr_min = 99.0`, `vanet_single_hop_oracle_hops_max = 1.05` |
 | **vanet-building** | the same with `--streetWidth=100` | A 180 × 180 m building. Vehicles on opposite streets relay round a corner, so the oracle's hopsMean is above 1.2 (1.36 measured). A channel that ignored the building would read 1.00. | `vanet_building_pdr_min = 70.0`, `vanet_building_oracle_hops_min = 1.2` |
+
+`results --anchor` checks:
+- the PDR floor, on the `--anchor-arms` rows;
+- the oracle hop bound, on the oracle arm's rows. It WARNs that the bound went
+  unchecked when the cell has no oracle row.
 
 ```bash
 ns3-scenario-check results vanet-building.txt \

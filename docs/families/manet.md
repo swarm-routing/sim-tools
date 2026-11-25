@@ -57,7 +57,7 @@ holds them equal):
 |---|---|---|
 | 50 nodes, 1500 × 300 m, 900 s, random waypoint at 20 m/s | sourced | Broch et al. 1998 |
 | pause 30 s, 300 m range, 20 sources of one 64-byte packet/s | sourced | Di Caro et al. 2004 §4. Broch et al. sweep pause from 0 s to 900 s and use 250 m. |
-| speed floor 1 m/s, disk channel, UDP | harness | routing-compare's defaults. The disk keeps the calibration free of fading (AntHocNet #24); `--propagation=tworay|nakagami` are the channel arms. |
+| speed floor 1 m/s, disk channel, UDP | harness | routing-compare's defaults. The disk keeps the calibration free of fading (AntHocNet #24); `--propagation=tworay\|nakagami` are the channel arms. |
 | 802.11 DCF at 2 Mbit/s | sourced | Broch et al. 1998; Di Caro et al. 2004 §4 |
 
 ## 3. Run it
@@ -69,10 +69,14 @@ docker run --rm --cpus 2 -v "$PWD:/src:ro" ghcr.io/swarm-routing/ns3-dev:latest-
 ```
 
 `ns3-tool sweep --family manet` runs the four cells with exactly the command
-lines `--only <cell>` gives:
+lines `--only <cell>` gives. Run it, and the `ns3-scenario-check` commands
+below, from the root of a checkout of this repository: `--catalogue
+scenarios` names the catalogue there. An installed package does not carry
+the catalogue, so without `--catalogue DIR` or `$NS3_TOOL_SCENARIOS` it
+stops with `no catalogue at ...`.
 
 ```bash
-ns3-tool sweep /opt/ns-3 --family manet --only sparse-static --runs 20 --dry-run
+ns3-tool sweep /opt/ns-3 --family manet --catalogue scenarios --only sparse-static --runs 20 --dry-run
 ```
 
 ```text
@@ -85,7 +89,7 @@ sweeps`. The catalogue describes cells, not sweeps.
 ## 4. Preflight
 
 ```bash
-ns3-scenario-check preflight --family manet --cell paper-base
+ns3-scenario-check preflight --family manet --cell paper-base --catalogue scenarios
 ```
 
 Every cell passes with exactly one WARN (`verdict: WARN (0 fail, 1 warn)`):

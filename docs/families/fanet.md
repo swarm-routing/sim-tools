@@ -89,10 +89,15 @@ beside routing-bench and name it in `--protocols`
 ([bring-your-own-protocol.md §4](../bring-your-own-protocol.md#4-build-and-register-it)).
 
 `ns3-tool sweep` runs the family's cells by name, with the command lines the
-catalogue gives:
+catalogue gives. Run it, and the `ns3-scenario-check` commands below, from
+the root of a checkout of this repository: `--catalogue scenarios` names the
+catalogue there. An installed package does not carry the catalogue, so
+without `--catalogue DIR` or `$NS3_TOOL_SCENARIOS` it stops with
+`no catalogue at ...`. A tool run from the checkout's `python/` finds
+`scenarios/` on its own.
 
 ```bash
-ns3-tool sweep /opt/ns-3 --family fanet --runs 20 --protocols aodv,olsr,dsdv --dry-run
+ns3-tool sweep /opt/ns-3 --family fanet --catalogue scenarios --runs 20 --protocols aodv,olsr,dsdv --dry-run
 ```
 
 ```text
@@ -103,7 +108,7 @@ ns3-tool sweep /opt/ns-3 --family fanet --runs 20 --protocols aodv,olsr,dsdv --d
 ## 4. Preflight
 
 ```bash
-ns3-scenario-check preflight --family fanet --cell fanet-main
+ns3-scenario-check preflight --family fanet --cell fanet-main --catalogue scenarios
 ```
 
 Both cells pass with WARNs only:
@@ -128,7 +133,10 @@ runs the preset with only the field shrunk.
 | **fanet-single-hop-3d** | `--scenario=fanet --nNodes=10 --areaX=100 --areaY=100 --areaZ=100 --range=350 --time=120 --runs=2` | The cube's 173 m diagonal is inside the range, so every flow is one hop: PDR about 100 %, oracle hopsMean exactly 1.00. | `fanet_single_hop_3d_pdr_min = 99.0`, `fanet_single_hop_3d_oracle_hops_max = 1.0` |
 | **fanet-vertical-3d** | `--scenario=fanet --nNodes=10 --areaX=10 --areaY=10 --areaZ=1000 --range=350 --time=120 --runs=2` | A 10 × 10 × 1000 m column. Flattened to 2-D, every pair is one hop (1.00). With altitude honoured, the oracle's hopsMean is above 1.2 (1.90 measured). | `fanet_vertical_3d_pdr_min = 90.0`, `fanet_vertical_3d_oracle_hops_min = 1.2` |
 
-Judge a saved anchor cell against a floor:
+To judge a saved anchor cell, pass the anchor to `results`. It checks the
+PDR floor on the `--anchor-arms` rows. It also checks the anchor's oracle hop
+bounds on the oracle arm's rows, and WARNs that they went unchecked when the
+cell has no oracle row:
 
 ```bash
 ns3-scenario-check results fanet-single-hop-3d.txt \

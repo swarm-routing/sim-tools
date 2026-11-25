@@ -31,6 +31,10 @@ import catalogue  # noqa: E402 (after the sys.path insert)
 import scenario_check  # noqa: E402
 import sweep  # noqa: E402
 
+# The tests read the checkout's catalogue, never one exported by the developer
+# (subprocesses inherit the environment).
+os.environ.pop(catalogue.ENV, None)
+
 
 def check(cond, msg):
     if not cond:
@@ -162,6 +166,34 @@ def test_results_toml_anchors():
     check(rc == 1 and "it offers: fanet-single-hop-3d, fanet-vertical-3d" in err, err)
 
 
+def test_results_oracle_hops():
+    """An anchor's <stem>_oracle_hops_min/_max are enforced on the oracle
+    arm's rows (fanet-main-6arm: oracle hopsMean 2.4), never ignored."""
+    sc = os.path.join(TOOL, "scenario_check.py")
+    cell = os.path.join(FIXTURES, "cells", "fanet-main-6arm.txt")
+    no_oracle = os.path.join(FIXTURES, "cells", "paper-mobile-jitter-cap1s.txt")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "anchors.toml")
+        with open(path, "w") as fh:
+            fh.write(
+                "schema = 1\n"
+                "[anchors.a]\nfloors = { a_pdr_min = 0.0, a_oracle_hops_min = 1.2 }\n"
+                "[anchors.b]\nfloors = { b_pdr_min = 0.0, b_oracle_hops_min = 3.0 }\n"
+                "[anchors.c]\nfloors = { c_pdr_min = 0.0, c_oracle_hops_max = 1.0 }\n"
+                "[anchors.d]\nfloors = { d_pdr_min = 0.0 }\n"
+            )
+        _rc, out, _err = run(sc, "results", cell, "--anchors", path, "--anchor", "a")
+        check("oracle hops floor 1.2 met (hopsMean 2.4)" in out, out)
+        rc, out, _err = run(sc, "results", cell, "--anchors", path, "--anchor", "b")
+        check(rc == 1 and "oracle hops floor 3.0 violated (hopsMean 2.4)" in out, out)
+        rc, out, _err = run(sc, "results", cell, "--anchors", path, "--anchor", "c")
+        check(rc == 1 and "oracle hops ceiling 1.0 violated (hopsMean 2.4)" in out, out)
+        _rc, out, _err = run(sc, "results", cell, "--anchors", path, "--anchor", "d")
+        check("oracle hops" not in out, f"a PDR-only anchor judged hops: {out}")
+        _rc, out, _err = run(sc, "results", no_oracle, "--anchors", path, "--anchor", "a")
+        check("WARN: anchor 'a' declares oracle hop bound(s) (a_oracle_hops_min)" in out, out)
+
+
 def dry_run(argv):
     err = io.StringIO()
     with contextlib.redirect_stderr(err):
@@ -204,6 +236,7 @@ for t in (
     test_floors_are_anthocnets,
     test_preflight_family,
     test_results_toml_anchors,
+    test_results_oracle_hops,
     test_sweep_family,
 ):
     t()

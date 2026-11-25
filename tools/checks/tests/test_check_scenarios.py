@@ -70,6 +70,18 @@ DEFECTS = [
         '= "high" }',
         "floors.fanet_vertical_3d_oracle_hops_min is not",
     ),
+    (
+        "fanet/anchors.toml",
+        "fanet_vertical_3d_oracle_hops_min = 1.2",
+        "fanet_vertical_3d_stretch_max = 1.2",
+        "floors.fanet_vertical_3d_stretch_max: results --anchor does not enforce it",
+    ),
+    (
+        "vanet/anchors.toml",
+        "{ vanet_building_pdr_min = 70.0,",
+        "{",
+        "exactly one *_pdr_min key",
+    ),
     ("manet/preset.toml", 'page = "docs/families/manet.md"', 'page = "x.md"', "does not exist"),
     ("README.md", "](../docs/families/vanet.md)", "]", "does not link ../docs/families/vanet.md"),
     ("vanet/preset.toml", "schema = 1", "schema = 2", "this reader reads 1"),
