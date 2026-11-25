@@ -282,6 +282,7 @@ jobs:
       - name: "The patched tree: every patch already-fixed"
         if: needs.changes.outputs.docs-only != 'true'
         timeout-minutes: 2
+        shell: bash
         run: |
           out=$(bash ns3/patches/apply.sh /opt/ns-3)
           echo "$out"
