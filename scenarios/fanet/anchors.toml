@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The FANET family's anchors: analytic (geometry decides the answer; no
+# published reference value exists for this field, and the Broch floor is
+# random waypoint on the ground). Floors and cells adapted from
+# swarm-routing/AntHocNet ns3/tools/anchors.yml and tools/checks/check-anchors.sh
+# (GPL-2.0-only, AntHocNet #482); the floor keys are that file's.
+# Format: scenarios/README.md.
+schema = 1
+family = "fanet"
+
+[anchors.fanet-single-hop-3d]
+kind = "analytic"
+flags = { scenario = "fanet", nNodes = 10, areaX = 100, areaY = 100, areaZ = 100, range = 350, time = 120, runs = 2 }
+arms = ["aodv", "oracle"]
+expected = "PDR about 100 % and the oracle's mean hop count exactly 1.00"
+source = "derivation: the 100 m cube's diagonal is 173 m, inside the 350 m range, so every pair is in range at every instant and every flow is one hop"
+measured = "AODV 100.0 %, oracle hopsMean 1.00 (2 runs, 120 s; AntHocNet ns3/tools/anchors.yml)"
+floors = { fanet_single_hop_3d_pdr_min = 99.0, fanet_single_hop_3d_oracle_hops_max = 1.0 }
+margin = "99.0 mirrors the planar single-hop floor; the hop bound is exact"
+
+[anchors.fanet-vertical-3d]
+kind = "analytic"
+flags = { scenario = "fanet", nNodes = 10, areaX = 10, areaY = 10, areaZ = 1000, range = 350, time = 120, runs = 2 }
+arms = ["aodv", "oracle"]
+expected = "oracle hopsMean above 1.2: altitude is honoured end to end"
+source = "derivation: in a 10 x 10 x 1000 m column every planar distance is under 15 m, so a field flattened to 2-D reads exactly 1.00 hops; with z honoured, pairs more than 350 m apart in altitude need relays"
+measured = "AODV 98.9 %, oracle hopsMean 1.90 (2 runs, 120 s; AntHocNet ns3/tools/anchors.yml)"
+floors = { fanet_vertical_3d_pdr_min = 90.0, fanet_vertical_3d_oracle_hops_min = 1.2 }
+margin = "the hop floor is the anchor's point (1.2 against 1.90 measured and 1.00 flattened); the PDR floor only catches a broken multi-hop path, so it is looser"

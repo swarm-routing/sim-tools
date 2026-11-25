@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The FANET family's preflight: per cell, the ns3-scenario-check preflight
+# knobs (equal to the values the preset resolves to; check-scenarios.py checks
+# it) and the verdict line they give. Run one with
+#   ns3-scenario-check preflight --family fanet --cell fanet-main
+# Format: scenarios/README.md.
+schema = 1
+family = "fanet"
+
+[cells.fanet-main]
+knobs = { nodes = 30, areaX = 1000, areaY = 1000, areaZ = 300, range = 350, time = 900, pause = 0, speed = 30, flows = 10, cbrBps = 2048, mobility = "gaussmarkov", propagation = "range" }
+verdict = "WARN (0 fail, 2 warn)"
+why = "the 3-D WARN (its own family, validated by the 3-D anchors) and the #230 path-diversity WARN (a 350 m link lives ~5.8 s at 30 m/s, under the 10 s window)"
+
+[cells.fanet-sparse]
+knobs = { nodes = 30, areaX = 1000, areaY = 1000, areaZ = 300, range = 250, time = 900, pause = 0, speed = 30, flows = 10, cbrBps = 2048, mobility = "gaussmarkov", propagation = "range" }
+verdict = "WARN (0 fail, 3 warn)"
+why = "as fanet-main, plus the sparse-regime WARN (mean degree 3.5 against 2 ln(30) = 6.8): partitions are this cell's purpose"

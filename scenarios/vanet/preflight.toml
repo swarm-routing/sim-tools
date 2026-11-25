@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The VANET family's preflight: per cell, the ns3-scenario-check preflight
+# knobs (equal to the values the preset resolves to; check-scenarios.py checks
+# it) and the verdict line they give. Run one with
+#   ns3-scenario-check preflight --family vanet --cell vanet-main
+# Format: scenarios/README.md.
+schema = 1
+family = "vanet"
+
+[cells.vanet-main]
+knobs = { nodes = 100, areaX = 800, areaY = 800, range = 0, time = 900, pause = 0, speed = 20, flows = 20, cbrBps = 2048, mobility = "manhattan", propagation = "urban", blocksX = 4, blocksY = 4, streetWidth = 20 }
+verdict = "WARN (0 fail, 3 warn)"
+why = "the VANET family WARN (its own family, validated by the VANET anchors), the corner-limited link lifetime WARN (a link round a corner lives ~1 s) and the #230 path-diversity WARN"
+
+[cells.vanet-sparse]
+knobs = { nodes = 40, areaX = 800, areaY = 800, range = 0, time = 900, pause = 0, speed = 20, flows = 20, cbrBps = 2048, mobility = "manhattan", propagation = "urban", blocksX = 4, blocksY = 4, streetWidth = 20 }
+verdict = "WARN (0 fail, 4 warn)"
+why = "as vanet-main, plus the sparse-regime WARN (road-network degree 3.8 against ln(40) = 3.7): partitions are this cell's purpose"

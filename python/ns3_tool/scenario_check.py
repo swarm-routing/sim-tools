@@ -41,6 +41,10 @@ Usage:
         # defaults = the paper base scenario; override what your dispatch
         # overrides. Exit 1 on any FAIL-level degeneracy.
 
+    scenario_check.py preflight --family NAME [--cell CELL] [--catalogue DIR] [knob ...]
+        # ns3-tools#55: a cell of the network-family catalogue (scenarios/NAME/
+        # preflight.toml) as the defaults; any knob given still wins.
+
     scenario_check.py preflight --harness isl-grid
                                 [--rows 6] [--cols 6] [--torus true|false]
                                 [--islDelayMs 5] [--islRate 10Mbps]
@@ -376,7 +380,16 @@ def load_anchors(path):
     """The --anchors file as {key: float}: `key: number` lines, where `#`
     starts a comment (the schema of AntHocNet's ns3/tools/anchors.yml, whose
     tools/checks/check-anchors.sh reads it the same way). A key line whose
-    value is not a number is an error, never a silently skipped floor."""
+    value is not a number is an error, never a silently skipped floor.
+
+    A `.toml` path is a catalogue family's anchors.toml (ns3-tools#55): the
+    floors of all its anchors, under the same keys."""
+    if path.endswith(".toml"):
+        cat = _catalogue()
+        try:
+            return cat.anchor_floors(path)
+        except cat.CatalogueError as e:
+            sys.exit(f"FAIL: --anchors {e}")
     anchors = {}
     try:
         fh = open(path)
@@ -3366,10 +3379,57 @@ def verdict():
     sys.exit(1 if fails else 0)
 
 
-def main():
+def _catalogue():
+    """The catalogue reader (catalogue.py), as a package sibling or by its
+    path when this file runs as a script or is loaded from source."""
+    try:
+        from . import catalogue
+    except ImportError:
+        import importlib.util
+
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogue.py")
+        spec = importlib.util.spec_from_file_location("ns3_tool_catalogue", path)
+        catalogue = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(catalogue)
+    return catalogue
+
+
+def family_defaults(parser, family, cell, base):
+    """ns3-tools#55: make FAMILY's CELL (the catalogue's preflight knobs) the
+    preflight defaults; an explicit flag still wins."""
+    cat = _catalogue()
+    try:
+        knobs = cat.preflight_knobs(cat.root(base), family, cell)
+    except cat.CatalogueError as e:
+        sys.exit(f"FAIL: --family {family}: {e}")
+    known = vars(parser.parse_args([]))
+    unknown = sorted(set(knobs) - set(known))
+    if unknown:
+        sys.exit(f"FAIL: --family {family}: unknown preflight knob(s): {', '.join(unknown)}")
+    # As strings, so argparse converts them as it does a command-line value:
+    # a knob from the catalogue prints exactly as the same knob typed.
+    parser.set_defaults(**{k: str(v) for k, v in knobs.items()})
+
+
+def build_parser():
+    """The command line: (the parser, its preflight subparser)."""
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("preflight")
+    # ns3-tools#55: a cell of the network-family catalogue (scenarios/) as the
+    # defaults of every knob below; main() applies it before parsing.
+    p.add_argument(
+        "--family",
+        metavar="NAME",
+        help="take the knobs of a catalogue family's cell (scenarios/NAME/preflight.toml); "
+        "explicit flags still win",
+    )
+    p.add_argument("--cell", metavar="NAME", help="the --family cell (default: the family's first)")
+    p.add_argument(
+        "--catalogue",
+        metavar="DIR",
+        help="the catalogue directory (default: $NS3_TOOL_SCENARIOS, else the checkout's scenarios/)",
+    )
     p.add_argument("--nodes", type=int, default=50)
     p.add_argument("--areaX", type=float, default=1500)
     p.add_argument("--areaY", type=float, default=300)
@@ -3448,7 +3508,8 @@ def main():
     r.add_argument(
         "--anchors",
         metavar="FILE",
-        help="the anchor floors, 'key: number' lines (AntHocNet's ns3/tools/anchors.yml schema)",
+        help="the anchor floors, 'key: number' lines (AntHocNet's ns3/tools/anchors.yml schema), "
+        "or a catalogue family's anchors.toml (scenarios/<family>/, ns3-tools#55)",
     )
     r.add_argument(
         "--anchor",
@@ -3489,7 +3550,23 @@ def main():
         default=100,
         help="the longest path a delivered packet can report (default 100)",
     )
-    args = ap.parse_args()
+    return ap, p
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    ap, pre = build_parser()
+    if argv[:1] == ["preflight"]:
+        # ns3-tools#55: the family's knobs become the defaults first.
+        scan = argparse.ArgumentParser(add_help=False)
+        for opt in ("--family", "--cell", "--catalogue"):
+            scan.add_argument(opt)
+        known, _rest = scan.parse_known_args(argv[1:])
+        if known.family:
+            family_defaults(pre, known.family, known.cell, known.catalogue)
+        elif known.cell:
+            ap.error("--cell needs --family")
+    args = ap.parse_args(argv)
     (cmd_preflight if args.cmd == "preflight" else cmd_results)(args)
 
 

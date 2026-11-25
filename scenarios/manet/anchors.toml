@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The MANET family's anchors. Floors adapted from swarm-routing/AntHocNet
+# ns3/tools/anchors.yml and tools/checks/check-anchors.sh (GPL-2.0-only); the
+# keys are that file's, so `--anchors scenarios/manet/anchors.toml --anchor
+# broch-low-mobility-aodv` judges a cell as AntHocNet's file does.
+# Format: scenarios/README.md.
+schema = 1
+family = "manet"
+
+[anchors.broch-low-mobility]
+kind = "literature"
+flags = { scenario = "paper", pause = 900, speed = 1, time = 300, runs = 2 }
+arms = ["aodv"]
+expected = "stock AODV delivers about 90 to 100 % on the Broch field at low mobility"
+source = "Broch et al., MobiCom 1998 (https://doi.org/10.1145/288235.288256): AODV's delivery ratio on the 1500 x 300 m, 50-node field at long pause times"
+measured = "AODV 92.5 % (time 300 s, 3 runs; AntHocNet ns3/tools/anchors.yml)"
+floors = { broch_low_mobility_aodv_pdr_min = 85.0 }
+margin = "85.0 leaves room for the gate's 2-run average and random node placement under the 92.5 % measured"

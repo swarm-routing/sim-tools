@@ -366,6 +366,20 @@ def emit_runs(writer, kind, group, x, scenario, run_rows):
         writer.writerow({"kind": kind, "group": group, "x": x, "scenario": scenario, **r})
 
 
+def family_cells(family, base=None):
+    """ns3-tools#55: a catalogue family's cells as a DISCRETE-shaped table,
+    {cell: (class label, routing-compare flags)}."""
+    try:
+        from . import catalogue
+    except ImportError:
+        import catalogue
+    try:
+        fam = catalogue.load(catalogue.root(base), family)
+    except catalogue.CatalogueError as e:
+        raise SystemExit(f"--family {family}: {e}") from e
+    return {name: (c["class"], dict(c["flags"])) for name, c in catalogue.cells(fam).items()}
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="ns3-tool sweep",
@@ -419,6 +433,18 @@ def main(argv=None):
         "--only", default="all", help="all|discrete|sweeps|<discrete name>|<sweep name>"
     )
     ap.add_argument(
+        "--family",
+        metavar="NAME",
+        help="run a network family's cells from the catalogue "
+        "(scenarios/NAME/preset.toml, ns3-tools#55) as the discrete taxonomy, "
+        "and no sweep; --only then names one of its cells",
+    )
+    ap.add_argument(
+        "--catalogue",
+        metavar="DIR",
+        help="the catalogue directory (default: $NS3_TOOL_SCENARIOS, else the checkout's scenarios/)",
+    )
+    ap.add_argument(
         "--point",
         default=None,
         help="with --only <sweep name>, run just the one point whose "
@@ -430,28 +456,36 @@ def main(argv=None):
     )
     ap.add_argument("--dry-run", action="store_true", help="print commands, don't run")
     args = ap.parse_args(argv)
+    discrete, sweep_table = DISCRETE, SWEEPS
+    if args.family:
+        discrete, sweep_table = family_cells(args.family, args.catalogue), {}
+    elif args.catalogue:
+        raise SystemExit("--catalogue needs --family")
 
-    if args.point is not None and args.only not in SWEEPS:
+    if args.point is not None and args.only not in sweep_table:
+        if args.family:
+            raise SystemExit("--point selects a sweep point; --family runs no sweep")
         raise SystemExit(
             "--point requires --only <sweep name> "
             f"(one of {', '.join(SWEEPS)}), got --only={args.only!r}"
         )
 
     runs, sim_time = args.runs, args.time
-    sweeps = SWEEPS
+    sweeps = sweep_table
     if args.quick:
         runs, sim_time = 2, 120
         sweeps = {
             k: (xl, base, pts[:: max(1, (len(pts) - 1) // 2)])
-            for k, (xl, base, pts) in SWEEPS.items()
+            for k, (xl, base, pts) in sweep_table.items()
         }
 
-    want_discrete = args.only in ("all", "discrete") or args.only in DISCRETE
-    want_sweeps = args.only in ("all", "sweeps") or args.only in SWEEPS
+    want_discrete = args.only in ("all", "discrete") or args.only in discrete
+    want_sweeps = not args.family and (args.only in ("all", "sweeps") or args.only in SWEEPS)
     # Checked before the output files are opened, so a typo cannot truncate
     # an earlier result (ns3-tools#39; the script it ports opened them first).
     if not (want_discrete or want_sweeps):
-        names = ", ".join(["all", "discrete", "sweeps", *DISCRETE, *SWEEPS])
+        kinds = ["all", "discrete"] if args.family else ["all", "discrete", "sweeps"]
+        names = ", ".join([*kinds, *discrete, *sweep_table])
         raise SystemExit(f"--only {args.only!r} is not one of: {names}")
     if args.point is not None:
         valid = [str(x) for x, _ in sweeps[args.only][2]]
@@ -478,8 +512,8 @@ def main(argv=None):
         wr.writeheader()
 
         if want_discrete:
-            for name, (klass, flags) in DISCRETE.items():
-                if args.only in DISCRETE and args.only != name:
+            for name, (klass, flags) in discrete.items():
+                if args.only in discrete and args.only != name:
                     continue
                 rows, run_rows = run_compare(
                     args.ns3dir,
