@@ -129,11 +129,26 @@ class FakeGh:
         self.runs = []  # {"id", "display_title"}
         self.next_id = 100
         self.cells = {}  # run id -> (artifact name, results.txt)
+        self.heads = {"main": "a" * 40}  # branch -> the commit it names now
+        self.tags = {}  # tag -> commit (git refs created through the API)
+        self.callers = {}  # ref -> caller text, when it differs from self.caller
 
     def __call__(self, *args, stdin=None, binary=False):
         url = args[0] if args[0] != "-X" else args[2]
         if "/contents/.github/workflows/" in url:
-            return base64.encodebytes(self.caller.encode()).decode()
+            text = self.callers.get(url.split("?ref=")[1], self.caller)
+            return base64.encodebytes(text.encode()).decode()
+        if "/commits/" in url:
+            return self.heads[url.split("/commits/")[1]] + "\n"
+        if "/git/ref/tags/" in url:
+            tag = url.split("/git/ref/tags/")[1]
+            if tag not in self.tags:
+                raise RuntimeError(f"gh api {url}: HTTP 404: Not Found")
+            return self.tags[tag] + "\n"
+        if url.endswith("/git/refs"):
+            fields = dict(x.split("=", 1) for x in args[3:] if "=" in x)
+            self.tags[fields["ref"].removeprefix("refs/tags/")] = fields["sha"]
+            return ""
         if "/actions/artifacts?name=" in url:
             name = url.split("name=")[1].split("&")[0]
             arts = [{"name": n, "expired": False, "workflow_run": {"id": rid}}
@@ -274,12 +289,61 @@ def _dispatch_cap():
         url, body = fake.dispatched[0]
         expect(url == "repos/swarm-routing/AntHocNet/actions/workflows/benchmark-cell.yml/dispatches",
                "dispatch-target", url)  # fmt: skip
-        expect(body == {"ref": "main", "inputs": {
+        expect(body == {"ref": "campaign/vtest", "inputs": {
             "image": IMAGE, "source_sha": SHA, "harness": "anthocnet-compare",
             "args": "--scenario=paper --runs=20 --nNodes=50 --time=300 --areaX=1500 --pause=30 "
                     "--speed=20 --propagation=range --range=300 --diag --mobility=rwp "
                     "--transport=udp --protocols=anthocnet,aodv",
             "cell": "grid", "label": "vtest/control/grid"}}, "dispatch-body", body)  # fmt: skip
+
+
+@case(
+    "dispatch: the first dispatch freezes ref as a tag; a bump on the branch cannot reach later cells"
+)
+def _dispatch_frozen():
+    with tempfile.TemporaryDirectory() as d:
+        plan, work = plan_of(d), os.path.join(d, "w")
+        fake = FakeGh()
+        dispatch(plan, work, fake)  # cap 2: two cells, then stops
+        expect(fake.tags == {"campaign/vtest": "a" * 40}, "freeze-tag", fake.tags)
+        state = cp.load_state(work)
+        expect(state["ref"] == {"branch": "main", "sha": "a" * 40, "tag": "campaign/vtest"},
+               "freeze-state", state.get("ref"))  # fmt: skip
+        # A bump merges on main: the branch moves, its caller changes.
+        fake.heads["main"] = "b" * 40
+        fake.callers["main"] = CALLER + "# bumped\n"
+        fake.active = 0
+        dispatch(plan, work, fake)
+        refs = {body["ref"] for _u, body in fake.dispatched}
+        expect(refs == {"campaign/vtest"} and len(fake.dispatched) == 4, "freeze-later",
+               fake.dispatched)  # fmt: skip
+        expect(fake.tags == {"campaign/vtest": "a" * 40}, "freeze-once", fake.tags)
+
+
+@case(
+    "dispatch: freeze false dispatches at ref; a tag elsewhere is refused; a dry run tags nothing"
+)
+def _dispatch_freeze_edges():
+    with tempfile.TemporaryDirectory() as d:
+        plan = plan_of(d)
+        plan["freeze"] = False
+        fake = FakeGh()
+        dispatch(plan, os.path.join(d, "w1"), fake)
+        expect({b["ref"] for _u, b in fake.dispatched} == {"main"} and not fake.tags,
+               "freeze-off", (fake.dispatched, fake.tags))  # fmt: skip
+        fake = FakeGh()
+        fake.tags["campaign/vtest"] = "c" * 40  # an earlier campaign of the same generation
+        err = dispatch(plan_of(d), os.path.join(d, "w2"), fake)
+        expect("start a new generation" in err and not fake.dispatched, "freeze-clash", err)
+        fake = FakeGh()
+        fake.tags["campaign/vtest"] = "a" * 40  # the same commit: a lost state.json, resumed
+        dispatch(plan_of(d), os.path.join(d, "w3"), fake)
+        expect(len(fake.dispatched) == 2, "freeze-same-commit", fake.dispatched)
+        fake = FakeGh()
+        err = dispatch(plan_of(d), os.path.join(d, "w4"), fake, dry_run=True)
+        expect(not fake.tags and not fake.dispatched and "first dispatch tags it" in err,
+               "freeze-dry-run", err)  # fmt: skip
+        expect("ref" not in cp.load_state(os.path.join(d, "w4")), "freeze-dry-state", "")
 
 
 @case("dispatch: --repo/--workflow override the plan's; no repo is refused")

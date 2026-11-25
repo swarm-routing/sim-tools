@@ -28,7 +28,8 @@ label is logged.
 A campaign is cells x arms (AntHocNet's format, unchanged):
 
     generation: v230              # file suffix
-    ref: main                     # the ref the caller workflow is dispatched at
+    ref: main                     # the branch the caller workflow is dispatched from
+    freeze: true                  # (default) dispatch every cell at a tag of it, below
     repo: swarm-routing/AntHocNet # the repository whose caller runs the cells
     workflow: benchmark-cell.yml  # that caller (default benchmark-cell.yml)
     source_sha: <40 hex>          # REQUIRED to dispatch: the commit every cell runs
@@ -58,13 +59,20 @@ each cell's ##PROV## line and rejects a cell whose commit= or image digest is
 not its arm's pin; it lists the rejected labels for re-dispatch, and
 `--redispatch` drops them from runs.tsv so the next `dispatch` sends them
 again. The dependencies (swarm-core, routing-bench) are not in the plan: the
-caller workflow names them, at the dispatch `ref`, so a dependency bump merged
-while a campaign is in flight changes the later cells (#148). `collect` reads
+caller workflow names them, at the dispatch ref. So that a dependency bump
+merged on `ref` while a campaign is in flight cannot change its later cells,
+the first `dispatch` tags the commit `ref` names then as
+`campaign/<generation>` in the repository (state.json `ref`), and every
+dispatch of the campaign, re-dispatches included, runs at that tag
+(swarm-routing/ARA#288); `freeze: false` dispatches at `ref` itself, as
+before (#148). `collect` reads
 each cell's `##PROV## modules=` (name@commit, the module under test being the
 one at the arm's source_sha), records the first collected cell's dependency
 set in state.json (`deps`) and rejects a cell, of any arm, whose set differs,
 naming both commits. A re-dispatch builds the caller's dependencies as they
-are at `ref` now: if they moved, start a new generation, or set `deps` in
+are at the campaign's ref (its tag; `ref` now with `freeze: false`, or for a
+campaign whose first cells were dispatched before the tag): if they moved,
+start a new generation, or set `deps` in
 state.json to the commits the caller names now (the report gives both) and
 collect with `--redispatch`, which drops the cells on the older set. A cell
 whose `modules=` names only the module under test has the empty set, which is
@@ -222,6 +230,7 @@ MANIFESTS = (
 SHA_RE = re.compile(r"[0-9a-f]{40}")
 REPO_RE = re.compile(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+")
 CELL_RE = re.compile(r"[a-z0-9][a-z0-9._-]*")
+GENERATION_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")  # a generation, as a tag component
 # A caller's `dependencies:` entry, name=owner/repo@<commit>[:subdir] (#155).
 DEP_RE = re.compile(
     r"(([A-Za-z0-9_.-]+)=[A-Za-z0-9-]+/[A-Za-z0-9._-]+@([0-9a-f]{40})(?::[^\s#'\"]+)?)"
@@ -838,6 +847,43 @@ def dispatch_run(repo, wf, ref, inputs, title):
     raise RuntimeError(f"dispatched {wf} '{title}', but no new run appeared")
 
 
+def frozen_ref(plan, repo, state, dry_run):
+    """The ref every cell of the campaign is dispatched at. The first dispatch
+    tags the commit `plan['ref']` names then as `campaign/<generation>` in the
+    repository and records it in state.json (`ref`); every later dispatch, and
+    a --redispatch, uses that tag, so a change to the caller workflow merged on
+    the branch while the campaign is in flight (a dependency bump) cannot reach
+    its later cells. A plan with `freeze: false` is dispatched at `ref` itself,
+    as before. A dry run resolves the commit and creates nothing."""
+    if plan.get("freeze") is False:
+        return plan["ref"]
+    if state.get("ref"):
+        return state["ref"]["tag"]
+    if not GENERATION_RE.fullmatch(str(plan["generation"])):
+        sys.exit(f"generation {plan['generation']!r} cannot name a tag (freeze: false to skip)")
+    tag = f"campaign/{plan['generation']}"
+    sha = gh(f"repos/{repo}/commits/{plan['ref']}", "--jq", ".sha").strip()
+    if dry_run:
+        print(f"ref {plan['ref']} = {sha[:12]}: the first dispatch tags it {tag}", file=sys.stderr)
+        return sha
+    try:
+        have = gh(f"repos/{repo}/git/ref/tags/{tag}", "--jq", ".object.sha").strip()
+    except RuntimeError as e:
+        if "404" not in str(e) and "Not Found" not in str(e):
+            raise
+        have = None
+    if have is None:
+        gh("-X", "POST", f"repos/{repo}/git/refs", "-f", f"ref=refs/tags/{tag}", "-f", f"sha={sha}")
+    elif have != sha:  # an earlier campaign of this generation, or a moved tag: never reuse
+        sys.exit(
+            f"tag {tag} exists at {have[:12]}, not at {plan['ref']} ({sha[:12]}): "
+            "start a new generation"
+        )
+    state["ref"] = {"branch": plan["ref"], "sha": sha, "tag": tag}
+    print(f"ref {plan['ref']} = {sha[:12]}, frozen as tag {tag} for this campaign", file=sys.stderr)
+    return tag
+
+
 def run_state(repo, rid):
     r = json.loads(gh(f"repos/{repo}/actions/runs/{rid}"))
     return r["conclusion"] or r["status"]
@@ -1030,11 +1076,12 @@ def cmd_dispatch(plan, a):
         logged[arm] = [sha, image]
     state.update(pins=logged, repo=repo, workflow=wf)
     state.setdefault("date", datetime.datetime.now(datetime.timezone.utc).date().isoformat())
+    ref = frozen_ref(plan, repo, state, a.dry_run)
     if not a.dry_run:
         save_state(work, state)
-    caller = read_caller(repo, wf, plan["ref"])
+    caller = read_caller(repo, wf, ref)
     if caller is None:
-        print(f"{repo} {wf} at {plan['ref']} forwards no `key`: no cell key, no reuse",
+        print(f"{repo} {wf} at {ref} forwards no `key`: no cell key, no reuse",
               file=sys.stderr)  # fmt: skip
     cap = a.cap or plan["cap"]
     done = read_log(work)
@@ -1081,7 +1128,7 @@ def cmd_dispatch(plan, a):
                   "cell": cell, "label": title}  # fmt: skip
         if key:
             inputs["key"] = key
-        rid = dispatch_run(repo, wf, plan["ref"], inputs, title)
+        rid = dispatch_run(repo, wf, ref, inputs, title)
         with open(os.path.join(work, "runs.tsv"), "a") as f:
             f.write(f"{label}\t{rid}\n")
         print(f"{label}\t{rid}")
@@ -1243,8 +1290,8 @@ def cmd_collect(plan, a):
             print(f"  {label}\trun {rid}\t{why}", file=sys.stderr)
         if any(why.startswith("dependencies ") for _l, _r, why in rejected):
             print(
-                f"  (a re-dispatch builds the caller's dependencies as they are at {plan['ref']} "
-                f"now: if they moved, start a new generation, or set deps in {work}/state.json "
+                "  (a re-dispatch builds the caller's dependencies as they are at "
+                f"{state.get('ref', {}).get('tag') or plan['ref']}: if they moved, start a new generation, or set deps in {work}/state.json "
                 "to the commits the caller names now and collect --redispatch)",
                 file=sys.stderr,
             )
