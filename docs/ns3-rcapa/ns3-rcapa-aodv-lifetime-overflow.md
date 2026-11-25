@@ -272,14 +272,16 @@ the bug); a separate "infinite" flag (more change than the defect needs).
 [`ns3/patches/NS3-005/apply.sh`](../../ns3/patches/NS3-005/apply.sh) decides
 from the source, not from the version (no ns-3 release has a fix yet, so no
 version list can say where one starts, and a `master` or already-patched tree
-carries the same version as a stock one): it skips a tree with no AODV, a tree
-the patch applies to in reverse (already patched), and a tree without the
-bug's signature (an unchecked `lifetime + Simulator::Now()` in the constructor
-or `SetLifeTime`: fixed or rewritten upstream); it applies the patch where the
-signature is and the patch fits (`git apply --check`: ns-3.44 to 3.49 and
-`master` `d07400ba`, read), and fails, asking for a refreshed patch, where the
-signature is but the patch does not fit (ns-3.7 to 3.43). Each case logs one
-`NS3-005: …` line. It is the vcpkg `ns3` port's NS3-001 mechanism
+carries the same version as a stock one): `not-affected` for a tree with no
+AODV, `already-fixed` for a tree the patch applies to in reverse (already
+patched) and for one without the bug's signature (an unchecked
+`lifetime + Simulator::Now()` in the constructor or `SetLifeTime`: fixed or
+rewritten upstream); `applied` where the signature is and the patch fits
+(`git apply --check`: ns-3.44 to 3.49 and `master` `d07400ba`, read), and
+`refused` (exit 1), asking for a refreshed patch, where the signature is but
+the patch does not fit (ns-3.7 to 3.43). Each case prints one
+`NS3-005: <outcome>: …` line, the four outcomes of every patch in
+`ns3/patches/` (its README, [swarm-routing/sim-tools#378](https://github.com/swarm-routing/sim-tools/issues/378)). It is the vcpkg `ns3` port's NS3-001 mechanism
 (swarm-routing/vcpkg-registry `ports/ns3/portfile.cmake`, forward and reverse
 `git apply --check`) with the signature check added, because a patch that
 does not fit is not proof that the bug is gone.
@@ -296,8 +298,8 @@ does not fit is not proof that the bug is gone.
 
 | Action | Where | Status |
 |--------|-------|--------|
-| CI proves the patch on every pull request: `apply.sh`'s five decisions, the reproducer failing on the stock sanitized tree and passing patched, the four AODV suites, and the skip on a patched tree | `.github/workflows/ns3.yml` job `ns3-patches`, `ns3/patches/NS3-005/test.sh` | done (in review) |
-| When ns-3 ships a fix, `apply.sh` skips by itself; the reproducer then confirms the release | `ns3/patches/NS3-005/apply.sh` | done (in review) |
+| CI proves the patch on every pull request: `apply.sh`'s five decisions, the reproducer failing on the stock sanitized tree and passing patched, the four AODV suites, and `already-fixed` on a patched tree | `.github/workflows/ns3.yml` job `ns3-patches`, `ns3/patches/NS3-005/test.sh` | done (in review) |
+| When ns-3 ships a fix, `apply.sh` prints `already-fixed` by itself; the reproducer then confirms the release | `ns3/patches/NS3-005/apply.sh` | done (in review) |
 | The upstream report asks for an AODV test that brings an interface up after t=0 under the sanitizers, the path ns-3's suites never take | swarm-routing/ns3-upstream-report | open (a later step of swarm-routing/sim-tools#374) |
 
 ## Upstream report

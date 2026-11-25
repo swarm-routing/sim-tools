@@ -11,14 +11,14 @@ UBSan aborts the run).
 | File | What |
 |------|------|
 | [`ns3-005-aodv-lifetime-saturate.patch`](ns3-005-aodv-lifetime-saturate.patch) | the fix: `RoutingTableEntry::SetLifeTime` saturates at `Simulator::GetMaximumSimulationTime()`, and the constructor sets its lifetime through it |
-| [`apply.sh`](apply.sh) | applies the patch to an ns-3 source tree only when that tree has the bug, and logs one `NS3-005: …` line saying what it did |
+| [`apply.sh`](apply.sh) | applies the patch to an ns-3 source tree only when that tree has the bug, and prints one `NS3-005: <outcome>: …` line ([`../README.md`](../README.md)) |
 | [`aodv-lifetime-overflow.cc`](aodv-lifetime-overflow.cc) | the minimal reproducer on stock ns-3 (an AODV interface set down, then up at 35 s) |
-| [`test.sh`](test.sh) | the proof, in a sanitized `ns3-dev` image: `apply.sh`'s five decisions, the reproducer failing on the stock tree, then passing with the AODV suites once patched, and `apply.sh` skipping on the patched tree |
+| [`test.sh`](test.sh) | the proof, in a sanitized `ns3-dev` image: `apply.sh`'s five decisions, the reproducer failing on the stock tree, then passing with the AODV suites once patched, and `already-fixed` on the patched tree |
 
 ## Use
 
 ```bash
-ns3/patches/NS3-005/apply.sh [--dry-run] <ns-3 source dir>   # before configuring/building ns-3
+ns3/patches/NS3-005/apply.sh [--dry-run] <ns-3 source dir>   # before configuring/building ns-3; or ns3/patches/apply.sh <dir> NS3-005
 ```
 
 It decides from the source, never from the ns-3 version. No ns-3 release
@@ -26,13 +26,13 @@ carries a fix yet, so no version list can say where one starts, and a tree
 built from `master`, or one already patched, carries the same version number
 as a stock one. The checks, in order:
 
-| The source | Decision | Exit |
-|------------|----------|------|
-| no `src/aodv/model/aodv-rtable.{cc,h}` | no AODV: skipped | 0 |
-| the patch applies in reverse (`git apply --check --reverse`) | already patched: skipped | 0 |
-| no unchecked `lifetime + Simulator::Now()` in `RoutingTableEntry` (the bug's signature, in the constructor or `SetLifeTime`) | no bug (fixed or rewritten upstream): skipped | 0 |
-| the patch applies (`git apply --check`) | the bug is there: applied | 0 |
-| none of these | the bug is there and the patch does not fit (ns-3.43 and older, where the context differs): fails, asking for a refreshed patch | 1 |
+| The source | Outcome | Exit |
+|------------|---------|------|
+| no `src/aodv/model/aodv-rtable.{cc,h}` | `not-affected` (no AODV) | 0 |
+| the patch applies in reverse (`git apply --check --reverse`) | `already-fixed` (already patched) | 0 |
+| no unchecked `lifetime + Simulator::Now()` in `RoutingTableEntry` (the bug's signature, in the constructor or `SetLifeTime`) | `already-fixed` (no bug: fixed or rewritten upstream) | 0 |
+| the patch applies (`git apply --check`) | `applied` (the bug is there) | 0 |
+| none of these | `refused`: the bug is there and the patch does not fit (ns-3.43 and older, where the context differs); refresh the patch | 1 |
 
 The signature check is why a version check is not needed and would not be
 enough: it reads the very code that overflows. The patch is the same
@@ -44,7 +44,15 @@ never used). It needs `git` and `grep`.
 Where it applies cleanly (read: `git apply --check` on each release's
 `aodv-rtable.{cc,h}`): ns-3.44 to ns-3.49 and ns-3-dev `master` `d07400ba`
 (the two files are identical in all of them). ns-3.7 to ns-3.43 have the bug
-too, with different context: `apply.sh` fails there rather than guess.
+too, with different context: `apply.sh` prints `refused` there rather than
+guess.
+
+## Outcomes
+
+| ns-3 | Outcome | How it was checked |
+|------|---------|--------------------|
+| ns-3.48 | applied | `apply.sh` on `ns3-dev:3.48-debug` (2026-11-25) |
+| ns-3.49 | applied | `test.sh` on `ns3-dev:latest-sanitized`; CI (`ns3.yml`, `ns3-patches`) on every change |
 
 ## Test
 
@@ -65,4 +73,5 @@ The patch is ours, written for swarm-routing (2026-11-25), against ns-3.49's
 GPL-2.0-only too (`LICENSING.md`, `ns3/patches/`). It is not an upstream merge
 request: the upstream report goes through
 [swarm-routing/ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report),
-and once ns-3 merges a fix, `apply.sh` skips by itself on a release that has it.
+and once ns-3 merges a fix, `apply.sh` prints `already-fixed` by itself on a
+release that has it.
