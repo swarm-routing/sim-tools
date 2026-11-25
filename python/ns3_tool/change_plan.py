@@ -29,7 +29,7 @@ A campaign is cells x arms (AntHocNet's format, unchanged):
 
     generation: v230              # file suffix
     ref: main                     # the branch the caller workflow is dispatched from
-    freeze: true                  # (default) dispatch every cell at a tag of it, below
+    freeze: true                  # optional: dispatch every cell at a tag of it, below
     repo: swarm-routing/AntHocNet # the repository whose caller runs the cells
     workflow: benchmark-cell.yml  # that caller (default benchmark-cell.yml)
     source_sha: <40 hex>          # REQUIRED to dispatch: the commit every cell runs
@@ -59,19 +59,20 @@ each cell's ##PROV## line and rejects a cell whose commit= or image digest is
 not its arm's pin; it lists the rejected labels for re-dispatch, and
 `--redispatch` drops them from runs.tsv so the next `dispatch` sends them
 again. The dependencies (swarm-core, routing-bench) are not in the plan: the
-caller workflow names them, at the dispatch ref. So that a dependency bump
-merged on `ref` while a campaign is in flight cannot change its later cells,
-the first `dispatch` tags the commit `ref` names then as
-`campaign/<generation>` in the repository (state.json `ref`), and every
-dispatch of the campaign, re-dispatches included, runs at that tag
-(swarm-routing/ARA#288); `freeze: false` dispatches at `ref` itself, as
-before (#148). `collect` reads
+caller workflow names them, at the dispatch ref, so a dependency bump merged
+on `ref` while a campaign is in flight changes its later cells (#148). With
+`freeze: true` (opt-in, swarm-routing/ARA#288) the first `dispatch` tags the
+commit `ref` names then as `campaign/<generation>` in the repository
+(state.json `ref`), and every dispatch of the campaign, re-dispatches
+included, runs at that tag, which such a bump cannot reach; it needs a token
+that may create tags, and stops the dispatch when it may not. Without it
+(the default) every cell is dispatched at `ref` itself. `collect` reads
 each cell's `##PROV## modules=` (name@commit, the module under test being the
 one at the arm's source_sha), records the first collected cell's dependency
 set in state.json (`deps`) and rejects a cell, of any arm, whose set differs,
 naming both commits. A re-dispatch builds the caller's dependencies as they
-are at the campaign's ref (its tag; `ref` now with `freeze: false`, or for a
-campaign whose first cells were dispatched before the tag): if they moved,
+are at the campaign's ref (its tag with `freeze: true`, else `ref` now): if
+they moved,
 start a new generation, or set `deps` in
 state.json to the commits the caller names now (the report gives both) and
 collect with `--redispatch`, which drops the cells on the older set. A cell
@@ -853,14 +854,15 @@ def frozen_ref(plan, repo, state, dry_run):
     repository and records it in state.json (`ref`); every later dispatch, and
     a --redispatch, uses that tag, so a change to the caller workflow merged on
     the branch while the campaign is in flight (a dependency bump) cannot reach
-    its later cells. A plan with `freeze: false` is dispatched at `ref` itself,
-    as before. A dry run resolves the commit and creates nothing."""
-    if plan.get("freeze") is False:
+    its later cells. Only with `freeze: true` (opt-in): any other plan is
+    dispatched at `ref` itself. A dry run resolves the commit and creates
+    nothing."""
+    if plan.get("freeze") is not True:
         return plan["ref"]
     if state.get("ref"):
         return state["ref"]["tag"]
     if not GENERATION_RE.fullmatch(str(plan["generation"])):
-        sys.exit(f"generation {plan['generation']!r} cannot name a tag (freeze: false to skip)")
+        sys.exit(f"generation {plan['generation']!r} cannot name a tag (drop `freeze: true`)")
     tag = f"campaign/{plan['generation']}"
     sha = gh(f"repos/{repo}/commits/{plan['ref']}", "--jq", ".sha").strip()
     if dry_run:
@@ -886,7 +888,7 @@ def frozen_ref(plan, repo, state, dry_run):
         except RuntimeError as e:  # no write access to refs: refuse, never dispatch unfrozen
             sys.exit(
                 f"cannot create tag {tag} in {repo} ({e}); dispatch where the token may "
-                f"create tags, or set `freeze: false` in the plan to dispatch at {plan['ref']} "
+                f"create tags, or drop `freeze: true` from the plan to dispatch at {plan['ref']} "
                 "without the freeze"
             )
     elif have != sha:  # an earlier campaign of this generation, or a moved tag: never reuse

@@ -291,7 +291,7 @@ def _dispatch_cap():
         url, body = fake.dispatched[0]
         expect(url == "repos/swarm-routing/AntHocNet/actions/workflows/benchmark-cell.yml/dispatches",
                "dispatch-target", url)  # fmt: skip
-        expect(body == {"ref": "campaign/vtest", "inputs": {
+        expect(body == {"ref": "main", "inputs": {
             "image": IMAGE, "source_sha": SHA, "harness": "anthocnet-compare",
             "args": "--scenario=paper --runs=20 --nNodes=50 --time=300 --areaX=1500 --pause=30 "
                     "--speed=20 --propagation=range --range=300 --diag --mobility=rwp "
@@ -300,11 +300,11 @@ def _dispatch_cap():
 
 
 @case(
-    "dispatch: the first dispatch freezes ref as a tag; a bump on the branch cannot reach later cells"
+    "dispatch: freeze true tags ref on the first dispatch; a bump on the branch cannot reach later cells"
 )
 def _dispatch_frozen():
     with tempfile.TemporaryDirectory() as d:
-        plan, work = plan_of(d), os.path.join(d, "w")
+        plan, work = plan_of(d, freeze=True), os.path.join(d, "w")
         fake = FakeGh()
         dispatch(plan, work, fake)  # cap 2: two cells, then stops
         expect(fake.tags == {"campaign/vtest": "a" * 40}, "freeze-tag", fake.tags)
@@ -323,31 +323,30 @@ def _dispatch_frozen():
 
 
 @case(
-    "dispatch: freeze false dispatches at ref; a tag elsewhere is refused; a dry run tags nothing"
+    "dispatch: no freeze (the default) dispatches at ref; a tag elsewhere is refused; a dry run tags nothing"
 )
 def _dispatch_freeze_edges():
     with tempfile.TemporaryDirectory() as d:
         plan = plan_of(d)
-        plan["freeze"] = False
         fake = FakeGh()
         dispatch(plan, os.path.join(d, "w1"), fake)
         expect({b["ref"] for _u, b in fake.dispatched} == {"main"} and not fake.tags,
                "freeze-off", (fake.dispatched, fake.tags))  # fmt: skip
         fake = FakeGh()
         fake.tags["campaign/vtest"] = "c" * 40  # an earlier campaign of the same generation
-        err = dispatch(plan_of(d), os.path.join(d, "w2"), fake)
+        err = dispatch(plan_of(d, freeze=True), os.path.join(d, "w2"), fake)
         expect("start a new generation" in err and not fake.dispatched, "freeze-clash", err)
         fake = FakeGh()
         fake.tags["campaign/vtest"] = "a" * 40  # the same commit: a lost state.json, resumed
-        dispatch(plan_of(d), os.path.join(d, "w3"), fake)
+        dispatch(plan_of(d, freeze=True), os.path.join(d, "w3"), fake)
         expect(len(fake.dispatched) == 2, "freeze-same-commit", fake.dispatched)
         fake = FakeGh()
         fake.refuse_refs = True  # a token that may not create tags (a sandboxed proxy)
-        err = dispatch(plan_of(d), os.path.join(d, "w5"), fake)
-        expect("cannot create tag campaign/vtest" in err and "freeze: false" in err
+        err = dispatch(plan_of(d, freeze=True), os.path.join(d, "w5"), fake)
+        expect("cannot create tag campaign/vtest" in err and "drop `freeze: true`" in err
                and not fake.dispatched, "freeze-refused", err)  # fmt: skip
         fake = FakeGh()
-        err = dispatch(plan_of(d), os.path.join(d, "w4"), fake, dry_run=True)
+        err = dispatch(plan_of(d, freeze=True), os.path.join(d, "w4"), fake, dry_run=True)
         expect(not fake.tags and not fake.dispatched and "first dispatch tags it" in err,
                "freeze-dry-run", err)  # fmt: skip
         expect("ref" not in cp.load_state(os.path.join(d, "w4")), "freeze-dry-state", "")
