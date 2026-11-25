@@ -57,6 +57,11 @@ jobs:
       - name: The family catalogue (scenarios/)
         # reads docs/families/: runs on a docs-only change too
         run: python3 -I tools/checks/check-scenarios.py
+      # #377: the agnostic modules of python/ns3_tool import no ns-3-bound one
+      # and name no ns-3 path or program (docs/layout.md "Python modules").
+      - name: The simulator-agnostic / ns-3 boundary (python/ns3_tool)
+        # reads docs/layout.md: runs on a docs-only change too
+        run: python3 -I tools/checks/check-python-boundary.py
       - name: Install the package; console scripts run
         if: steps.changes.outputs.docs-only != 'true'
         timeout-minutes: 5  # an install, as the PyYAML step (seconds in a green run)

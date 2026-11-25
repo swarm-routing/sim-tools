@@ -55,7 +55,7 @@ Licence column: **GPL** is `GPL-2.0-only`, **dual** is `MIT OR GPL-2.0-only`
 | `scenarios/<family>/{preset,preflight,anchors}.toml`, `scenarios/README.md` | agnostic data (presets are `routing-compare` flags) | catalogue | GPL | not packaged: read from a checkout (`--catalogue`, `$NS3_TOOL_SCENARIOS`) | `ns3-tool sweep --family`, `ns3-scenario-check`, `check-scenarios.py`, `docs/families/` |
 | `campaigns/*.toml` | agnostic (pins ns-3 images and modules) | plan | GPL | not packaged; copied into each benchmarks run | `campaign-image.yml`, `campaign-cell.yml`, swarm-routing/benchmarks |
 | `tools/checks/check-stock-arms.sh`, `arm-delivers.sh`, `check-scaffold-arm.sh`, `check-perf-markers.sh` | ns-3 | check | dual | not shipped (#350) | `ns3.yml`; sim-containers `test/downstream.txt` (`check-stock-arms.sh` at `@main`); the guide |
-| `tools/checks/check-scenarios.py`, `check-refs.py`, `tests/` | agnostic | check | dual | not shipped | `make test`, CI |
+| `tools/checks/check-scenarios.py`, `check-refs.py`, `check-python-boundary.py` (#377), `tests/` | agnostic | check | dual | not shipped | `make test`, CI |
 | `tools/release/dist.sh`, `tools/requirements/` | agnostic (builds the ns-3 and Python assets) | release | dual | not shipped | `make dist`, `release.yml` |
 | `.cz.toml`, `CHANGELOG.md`, `CITATION.cff` | agnostic | release | GPL | the release, Zenodo | swarm-routing/.github `reusable-release.yml` |
 | `.github/workflows/ns3.yml` | ns-3 (plus the Python quality job) | check | GPL | — | every PR |
@@ -80,7 +80,7 @@ ns-3-bound one and names no ns-3 path or program.
 |--------|------|-----------|
 | `bench_parse`, `stats_util`, `native_view`, `comparator_view`, `pool_runs`, `sweep_summary` | reader | agnostic |
 | `diagnose` | reader (drop book, scenario_check results) | agnostic |
-| `scenario_check` | plausibility | agnostic |
+| `scenario_check` | plausibility | agnostic (one recorded exception: it loads `catalogue` lazily, only for `--family` and an `anchors.toml` path; `check-python-boundary.py` `ALLOWED_IMPORTS`) |
 | `cost` | campaign (runner-minute model) | agnostic |
 | `cli` | dispatcher | agnostic (dispatches to ns-3-bound commands too) |
 | `catalogue` | catalogue reader; turns presets into `routing-compare` flags | ns-3 |
