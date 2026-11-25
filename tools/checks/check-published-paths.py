@@ -17,9 +17,9 @@ fails when
 - a path of the base's table is missing from this table,
 
 and names the path and the consumer the table records. A path may leave the
-list only in a change that also edits the table and cites, on an added line
-of `docs/layout.md`, an accepted ADR other than ADR-0002 (the one that froze
-the list); such a path is then exempt.
+list only in a change that cites, on an added line of `docs/layout.md` that
+also names the path, an accepted ADR other than ADR-0002 (the one that froze
+the list); only that path is then exempt.
 
     check-published-paths.py [--base REF] [--root DIR]
 
@@ -65,22 +65,33 @@ def parse_table(text: str) -> dict[str, str]:
 
 
 def tracked(root: Path, path: str) -> bool:
-    """True if HEAD's tree holds the file, or any file under the directory."""
-    return bool(git(root, "ls-tree", "-r", "--name-only", "HEAD", "--", path).strip())
+    """True if HEAD's tree holds the file at `path`, or, for a directory row
+    (trailing slash), any file under it. A directory at a file row's path is not
+    the published file."""
+    if path.endswith("/"):
+        return bool(git(root, "ls-tree", "-r", "--name-only", "HEAD", "--", path).strip())
+    entry = git(root, "ls-tree", "HEAD", "--", path).split()
+    return len(entry) >= 2 and entry[1] == "blob"
 
 
-def exempt_adrs(root: Path, base: str) -> list[str]:
-    """Accepted ADRs, other than the freezing one, that layout.md's added lines cite."""
-    diff = git(root, "diff", "-U0", f"{base}...HEAD", "--", LAYOUT)
-    added = "\n".join(
-        ln[1:] for ln in diff.splitlines() if ln.startswith("+") and not ln.startswith("+++")
+def accepted(root: Path, num: str) -> bool:
+    return any(
+        re.search(r"^- \*\*Status:\*\*\s*Accepted", adr.read_text(), re.M)
+        for adr in (root / "docs" / "adr").glob(f"{num}-*.md")
     )
-    found = []
-    for num in sorted(set(ADR_REF.findall(added)) - {FROZEN_BY}):
-        for adr in (root / "docs" / "adr").glob(f"{num}-*.md"):
-            if re.search(r"^- \*\*Status:\*\*\s*Accepted", adr.read_text(), re.M):
-                found.append(f"ADR-{num}")
-    return found
+
+
+def exempt_lines(root: Path, base: str) -> list[str]:
+    """Added lines of layout.md that cite an accepted ADR other than the freezing
+    one. A path is exempt only when such a line also names it."""
+    diff = git(root, "diff", "-U0", f"{base}...HEAD", "--", LAYOUT)
+    lines = []
+    for ln in diff.splitlines():
+        if not ln.startswith("+") or ln.startswith("+++"):
+            continue
+        if any(accepted(root, n) for n in set(ADR_REF.findall(ln)) - {FROZEN_BY}):
+            lines.append(ln[1:])
+    return lines
 
 
 def check(root: Path, base: str) -> list[str]:
@@ -88,18 +99,22 @@ def check(root: Path, base: str) -> list[str]:
         root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"
     )  # an unknown base is an error, not a pass
     head_table = parse_table((root / LAYOUT).read_text())
+    # the table frozen where this branch forked, not main's tip: a row main added
+    # since is not this change's to keep; unrelated histories raise, exit 2
+    fork = git(root, "merge-base", base, "HEAD").strip()
     try:
-        base_table = parse_table(git(root, "show", f"{base}:{LAYOUT}"))
+        base_table = parse_table(git(root, "show", f"{fork}:{LAYOUT}"))
     except RuntimeError:
         base_table = {}  # the table's first PR: nothing frozen yet
     if not head_table:
         return [f"{LAYOUT}: no machine-readable rows under '## Published paths'"]
     consumers = {**head_table, **base_table}
-    exempt = bool(base_table and exempt_adrs(root, base))
+    cites = exempt_lines(root, base) if base_table else []
     findings = []
     for path in sorted(set(head_table) | set(base_table)):
         gone = not tracked(root, path)
         unlisted = path in base_table and path not in head_table
+        exempt = any(path in ln for ln in cites)
         if (gone or unlisted) and not exempt:
             what = (
                 "is missing from the Published paths table" if unlisted else "is moved or deleted"

@@ -29,6 +29,7 @@ LAYOUT = """# Layout
 
 ## Where a new file goes
 """
+RETIRED = "Retired by {cited}: `tools/checks/check-stock-arms.sh`.\n"
 ADR = "# 0003. Move it\n\n- **Status:** Accepted (2026-12-01)\n"
 
 
@@ -135,17 +136,58 @@ write(
     LAYOUT.replace(
         "| `tools/checks/check-stock-arms.sh` | sim-containers `test/downstream.txt` |\n", ""
     )
-    + "Retired by ADR-0003.\n",
+    + RETIRED.format(cited="ADR-0003"),
 )
 write(root, "docs/adr/0003-move.md", ADR)
 commit(root)
 expect("ADR exemption failed", verdict(root)[0] == 0)
 
+# the exemption covers the path the citing line names, not an independent rename
+root = scratch()
+run(root, "rm", "-q", "tools/checks/check-stock-arms.sh")
+run(root, "mv", "ns3/routing-bench", "ns3/harness")
+write(root, "docs/layout.md", LAYOUT + RETIRED.format(cited="ADR-0003"))
+write(root, "docs/adr/0003-move.md", ADR)
+commit(root)
+code, out = verdict(root)
+expect(
+    "ADR exempted an unrelated rename",
+    code == 1 and "ns3/routing-bench/" in out and "check-stock-arms.sh" not in out,
+)
+
+# a directory replacing a published file is not the file
+root = scratch()
+run(root, "rm", "-q", "tools/checks/check-stock-arms.sh")
+write(root, "tools/checks/check-stock-arms.sh/run.sh")
+commit(root)
+code, out = verdict(root)
+expect("directory replaced a file", code == 1 and "check-stock-arms.sh" in out)
+
+# main adds a published row after the branch forks: an additive branch passes,
+# deleting a row published at the fork point still fails
+root = scratch()
+run(root, "checkout", "-q", "base")
+write(
+    root,
+    "docs/layout.md",
+    LAYOUT.replace("\n## Where", "| `docs/new.md` | a new consumer |\n\n## Where"),
+)
+write(root, "docs/new.md")
+run(root, "add", "-A")
+run(root, "commit", "-qm", "main moves")
+run(root, "checkout", "-q", "work")
+write(root, "ns3/patches/NS3-005/README.md")
+commit(root)
+expect("row added on main failed an additive branch", verdict(root)[0] == 0)
+run(root, "rm", "-q", "tools/checks/check-stock-arms.sh")
+commit(root)
+expect("diverged branch deleted a fork-point path", verdict(root)[0] == 1)
+
 # citing ADR-0002 (the freezing one) or an unaccepted ADR does not exempt
 for cited, adr in (("ADR-0002", None), ("ADR-0003", "- **Status:** Proposed\n")):
     root = scratch()
     run(root, "rm", "-q", "tools/checks/check-stock-arms.sh")
-    write(root, "docs/layout.md", LAYOUT + f"Retired by {cited}.\n")
+    write(root, "docs/layout.md", LAYOUT + RETIRED.format(cited=cited))
     if adr:
         write(root, "docs/adr/0003-move.md", adr)
     commit(root)
