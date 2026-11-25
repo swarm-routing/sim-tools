@@ -100,7 +100,10 @@ release_environment = false`, maintainer decision 2026-11-11, written when
 would make the maintainer approve each publish). Dispatch `release.yml`
 with `dry-run`, then `bump`; merging the bot's
 `chore(release): bump version A to B` PR tags and publishes with no
-approval step. `make dist`
+approval step; its `vcpkg-ports: sim-tools-ns3` then opens the port bump in
+swarm-routing/vcpkg-registry (one vcpkg port per simulator folder: `ns3/` is
+`sim-tools-ns3`, on the `ns3` port, from `routing-bench-<ver>.tar.gz`;
+swarm-routing/vcpkg-registry#76). `make dist`
 builds the assets locally (`DIST_CHECK=0` skips the docker suite and the
 wheel check).
 
