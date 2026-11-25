@@ -1,6 +1,6 @@
 # AGENTS.md — guide for AI coding agents
 
-Operational guide for LLM agents working in `swarm-routing/ns3-tools`. Read this
+Operational guide for LLM agents working in `swarm-routing/sim-tools`. Read this
 before changing anything. Org-wide conventions:
 [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md). Shape and rules mirror
 [AntHocNet's AGENTS.md](https://github.com/swarm-routing/AntHocNet/blob/main/AGENTS.md), the source repository.

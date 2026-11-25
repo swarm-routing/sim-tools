@@ -1,4 +1,4 @@
-# ns3-tools
+# sim-tools
 
 <!-- org-sync:begin badges -->
 | Group | Badges |
