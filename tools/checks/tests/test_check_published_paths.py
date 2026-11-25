@@ -193,6 +193,53 @@ for cited, adr in (("ADR-0002", None), ("ADR-0003", "- **Status:** Proposed\n"))
     commit(root)
     expect(f"{cited} exempted", verdict(root)[0] == 1)
 
+# a citation naming a nested path does not exempt its parent directory's row (#396)
+root = scratch()
+run(root, "rm", "-rq", "ns3/routing-bench")
+write(
+    root,
+    "docs/layout.md",
+    LAYOUT.replace("| `ns3/routing-bench/` | the org image workflows |\n", "")
+    + "Retired by ADR-0003: `ns3/routing-bench/model/a.cc`.\n",
+)
+write(root, "docs/adr/0003-move.md", ADR)
+commit(root)
+code, out = verdict(root)
+expect("nested citation exempted its parent", code == 1 and "ns3/routing-bench/" in out)
+
+# the exact path cited, row removed and directory gone, passes (trailing slash or not)
+for cite in ("ns3/routing-bench/", "ns3/routing-bench"):
+    root = scratch()
+    run(root, "rm", "-rq", "ns3/routing-bench")
+    write(
+        root,
+        "docs/layout.md",
+        LAYOUT.replace("| `ns3/routing-bench/` | the org image workflows |\n", "")
+        + f"Retired by ADR-0003: `{cite}`.\n",
+    )
+    write(root, "docs/adr/0003-move.md", ADR)
+    commit(root)
+    expect(f"exact citation {cite} failed", verdict(root)[0] == 0)
+
+# a row present at the fork point, removed while its file stays tracked, fails
+# on a branch that diverged from main
+root = scratch()
+run(root, "checkout", "-q", "base")
+write(root, "docs/other.md")
+run(root, "add", "-A")
+run(root, "commit", "-qm", "main moves")
+run(root, "checkout", "-q", "work")
+write(
+    root,
+    "docs/layout.md",
+    LAYOUT.replace(
+        "| `tools/checks/check-stock-arms.sh` | sim-containers `test/downstream.txt` |\n", ""
+    ),
+)
+commit(root)
+code, out = verdict(root)
+expect("fork-point row removal passed", code == 1 and "check-stock-arms.sh" in out)
+
 # a table with no rows, and an unknown base, are refused
 root = scratch()
 write(root, "docs/layout.md", "# Layout\n")
