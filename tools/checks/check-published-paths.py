@@ -38,6 +38,7 @@ LAYOUT = "docs/layout.md"
 HEADING = re.compile(r"^##\s+Published paths\s*$")
 ROW_PATH = re.compile(r"^\|\s*`([^`<>*|\s]+)`\s*\|(.*)\|\s*$")
 ADR_REF = re.compile(r"ADR-(\d{4})")
+PATH_TOKEN = re.compile(r"[^\s`'\"()\[\]<>,;|*]+")  # whole words: @ + ~ = # stay in a path
 FROZEN_BY = "0002"
 
 
@@ -94,6 +95,14 @@ def exempt_lines(root: Path, base: str) -> list[str]:
     return lines
 
 
+def names(line: str, path: str) -> bool:
+    """True if `line` names `path` as a whole path: a token equal to it (a
+    directory with or without its trailing slash), never a prefix or a
+    substring of a longer path (#396)."""
+    want = path.rstrip("/")
+    return any(tok.rstrip(".,:;").rstrip("/") == want for tok in PATH_TOKEN.findall(line))
+
+
 def check(root: Path, base: str) -> list[str]:
     git(
         root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}"
@@ -114,7 +123,7 @@ def check(root: Path, base: str) -> list[str]:
     for path in sorted(set(head_table) | set(base_table)):
         gone = not tracked(root, path)
         unlisted = path in base_table and path not in head_table
-        exempt = any(path in ln for ln in cites)
+        exempt = any(names(ln, path) for ln in cites)
         if (gone or unlisted) and not exempt:
             what = (
                 "is missing from the Published paths table" if unlisted else "is moved or deleted"
