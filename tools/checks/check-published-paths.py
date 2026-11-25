@@ -38,7 +38,7 @@ LAYOUT = "docs/layout.md"
 HEADING = re.compile(r"^##\s+Published paths\s*$")
 ROW_PATH = re.compile(r"^\|\s*`([^`<>*|\s]+)`\s*\|(.*)\|\s*$")
 ADR_REF = re.compile(r"ADR-(\d{4})")
-PATH_TOKEN = re.compile(r"[\w./-]+")
+PATH_TOKEN = re.compile(r"[^\s`'\"()\[\]<>,;|*]+")  # whole words: @ + ~ = # stay in a path
 FROZEN_BY = "0002"
 
 

@@ -240,6 +240,21 @@ commit(root)
 code, out = verdict(root)
 expect("fork-point row removal passed", code == 1 and "check-stock-arms.sh" in out)
 
+# a citation of a longer path holding @ + ~ = # does not exempt a published tail of it
+root = scratch()
+run(root, "rm", "-q", "tools/checks/check-stock-arms.sh")
+write(
+    root,
+    "docs/layout.md",
+    LAYOUT.replace(
+        "| `tools/checks/check-stock-arms.sh` | sim-containers `test/downstream.txt` |\n", ""
+    )
+    + "Retired by ADR-0003: `x@tools/checks/check-stock-arms.sh`, `y#tools/checks/check-stock-arms.sh`.\n",
+)
+write(root, "docs/adr/0003-move.md", ADR)
+commit(root)
+expect("punctuated citation exempted a tail path", verdict(root)[0] == 1)
+
 # a table with no rows, and an unknown base, are refused
 root = scratch()
 write(root, "docs/layout.md", "# Layout\n")
