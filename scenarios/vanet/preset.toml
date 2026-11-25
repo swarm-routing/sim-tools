@@ -1,0 +1,120 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The VANET family: routing-compare --scenario=vanet (vehicles on a Manhattan
+# street grid, buildings shadowing the radio), and its cells. Values and
+# sources adapted from swarm-routing/AntHocNet docs/benchmarks/scenarios/vanet.md
+# (GPL-2.0-only, AntHocNet #488); the values are the ones routing-bench's preset
+# resolves to (ns3/routing-bench/model/routing-bench-harness.cc).
+# Format: scenarios/README.md.
+schema = 1
+family = "vanet"
+title = "VANET: vehicles on a city street grid"
+scenario = "vanet"
+page = "docs/families/vanet.md"
+
+[values.nNodes]
+value = 100
+kind = "chosen"
+source = "for density: the #488 preflight's road-network degree is 9.6 at 100 vehicles, clearing 2 ln(100) = 9.2 under the buildings, so the main cell measures routing (the oracle's measured graph averages degree 9.1)"
+
+[values.areaX]
+value = 800
+kind = "chosen"
+source = "shrunk from Bai & Helmy's 1000 x 1000 m Manhattan field (Bai, Sadagopan & Helmy, INFOCOM 2003, https://doi.org/10.1109/infcom.2003.1208920): that field needs ~145 vehicles to clear 2 ln(n) under the urban channel; 800 x 800 m reaches it at 95-100"
+
+[values.areaY]
+value = 800
+kind = "chosen"
+source = "as areaX"
+
+[values.areaZ]
+value = 0
+kind = "harness"
+source = "a street grid is planar; the harness refuses --mobility=manhattan with --areaZ > 0"
+
+[values.time]
+value = 900
+kind = "sourced"
+source = "Bai, Sadagopan & Helmy 2003: 900 s; the paper/thesis horizon"
+
+[values.speed]
+value = 20
+kind = "chosen"
+source = "36-72 km/h urban arterial speeds, inside the AntHocNet #298 urban envelope (10-40 m/s); Bai & Helmy sweep maxima of 1-60 m/s"
+
+[values.speedMin]
+value = 10
+kind = "chosen"
+source = "keeps vehicles moving, since the model has no stops; each leg's speed is drawn U(speedMin, speed)"
+
+[values.pause]
+value = 0
+kind = "harness"
+source = "the Manhattan model never pauses: pause is inert, and the preset states 0"
+
+[values.range]
+value = 0
+kind = "harness"
+source = "inert under --propagation=urban: the two-ray decode radius (423.3 m) and the building loss bound every link"
+
+[values.flows]
+value = 20
+kind = "sourced"
+source = "Bai, Sadagopan & Helmy 2003: 20 CBR sources"
+
+[values.cbrBps]
+value = 2048
+kind = "sourced"
+source = "Bai, Sadagopan & Helmy 2003: 4 packets/s of 64 bytes (also the AntHocNet thesis's rate, Ducatelle 2007 §5.1.3); about 2 % of the 2 Mbit/s channel"
+
+[values.mobility]
+value = "manhattan"
+kind = "sourced"
+source = "the Manhattan model of Bai, Sadagopan & Helmy 2003, with the turn probabilities 0.5 straight / 0.25 left / 0.25 right of Camp, Boleng & Davies 2002 (https://doi.org/10.1002/wcm.72); built in the harness from one pinned RNG stream, not imported as a BonnMotion trace"
+
+[values.propagation]
+value = "urban"
+kind = "sourced"
+source = "two-ray ground path loss plus the building shadowing of Sommer, Eckhoff, German & Dressler, WONS 2011 (https://doi.org/10.1109/wons.2011.5720204): 9 dB per wall cut, 0.4 dB/m inside, Veins' defaults"
+
+[values.blocksX]
+value = 4
+kind = "assumption"
+source = "4 x 4 blocks of 200 m: neither source fixes a block length; 200 m is a city-block order of magnitude and keeps a block under the 423.3 m line-of-sight reach, so a street is one or two hops long"
+
+[values.blocksY]
+value = 4
+kind = "assumption"
+source = "as blocksX"
+
+[values.streetWidth]
+value = 20
+kind = "assumption"
+source = "sets the building footprint (180 x 180 m per block); not from a source"
+
+[values.transport]
+value = "udp"
+kind = "harness"
+source = "routing-compare's default: CBR over UDP"
+
+[values.runs]
+value = 1
+kind = "harness"
+source = "routing-compare's default; a comparison passes --runs=20 or more (golden rule 6)"
+
+[fixed.startWindow]
+value = 180
+kind = "chosen"
+source = "flows start uniformly in [0, 180] s, as in the paper preset"
+
+[fixed.radio]
+value = "802.11b DSSS, constant 2 Mbit/s, 2.4 GHz"
+kind = "assumption"
+source = "the harness's radio, kept for every family (AntHocNet ADR-0019: a family changes the scenario, not the stack). Threat to validity: Sommer et al.'s constants were fitted at 5.9 GHz (802.11p), so the buildings here are, if anything, slightly too opaque"
+
+[cells.vanet-main]
+class = "VANET / street grid, routing"
+flags = { scenario = "vanet" }
+
+[cells.vanet-sparse]
+class = "VANET / street grid, partition"
+flags = { scenario = "vanet", nNodes = 40 }

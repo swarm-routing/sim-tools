@@ -597,6 +597,29 @@ a plan in
 it needs a repository with the org's cell
 workflow, which the local loop above does not.
 
+The cell above is a shortened paper field. For a real comparison, run your
+arm on a network family's cells. The
+[family catalogue](https://github.com/swarm-routing/sim-tools/blob/main/scenarios/README.md)
+covers MANET, FANET and VANET. For each family it gives the routing-compare
+preset, the cells, the preflight verdict each cell must give, and the
+family's anchors, with a source for every value. Each family also has a
+"configure it with ns-3" page:
+[MANET](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/manet.md),
+[FANET](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/fanet.md),
+[VANET](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/vanet.md).
+
+The catalogue came after v1.1.4, so these links point at `main`. To use it:
+- check out this repository;
+- install a release after v1.1.4, or `pip install ./python` from the
+  checkout: v1.1.4's `ns3-scenario-check` and `ns3-tool sweep` have no
+  `--family`;
+- pass the checkout's `scenarios/` with `--catalogue DIR`:
+
+```bash
+ns3-scenario-check preflight --family fanet --catalogue DIR
+ns3-tool sweep NS3DIR --family fanet --catalogue DIR --protocols ARM,aodv,olsr,dsdv --runs 20
+```
+
 ## 6. The three gates
 
 An arm's numbers count in a comparison only after three gates (org rule 6,

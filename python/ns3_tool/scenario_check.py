@@ -41,6 +41,10 @@ Usage:
         # defaults = the paper base scenario; override what your dispatch
         # overrides. Exit 1 on any FAIL-level degeneracy.
 
+    scenario_check.py preflight --family NAME [--cell CELL] [--catalogue DIR] [knob ...]
+        # ns3-tools#55: a cell of the network-family catalogue (scenarios/NAME/
+        # preflight.toml) as the defaults; any knob given still wins.
+
     scenario_check.py preflight --harness isl-grid
                                 [--rows 6] [--cols 6] [--torus true|false]
                                 [--islDelayMs 5] [--islRate 10Mbps]
@@ -376,7 +380,16 @@ def load_anchors(path):
     """The --anchors file as {key: float}: `key: number` lines, where `#`
     starts a comment (the schema of AntHocNet's ns3/tools/anchors.yml, whose
     tools/checks/check-anchors.sh reads it the same way). A key line whose
-    value is not a number is an error, never a silently skipped floor."""
+    value is not a number is an error, never a silently skipped floor.
+
+    A `.toml` path is a catalogue family's anchors.toml (ns3-tools#55): the
+    floors of all its anchors, under the same keys."""
+    if path.endswith(".toml"):
+        cat = _catalogue()
+        try:
+            return cat.anchor_floors(path)
+        except cat.CatalogueError as e:
+            sys.exit(f"FAIL: --anchors {e}")
     anchors = {}
     try:
         fh = open(path)
@@ -421,6 +434,50 @@ def anchor_key(name, anchors):
 def csv_arms(spec):
     """'a,b' -> ('a', 'b'); None or '' -> ()."""
     return tuple(x for x in (spec or "").split(",") if x)
+
+
+ORACLE_HOPS_SUFFIXES = ("_oracle_hops_min", "_oracle_hops_max")
+
+
+def anchor_hop_bounds(key, anchors):
+    """ns3-tools#55: the oracle hop bounds an anchor declares beside its PDR
+    floor, {key: value} for <stem>_oracle_hops_min / _oracle_hops_max
+    (the keys of AntHocNet's anchors.yml: an analytic anchor's geometry fixes
+    the shortest path's mean hop count)."""
+    stem = key[: -len(ANCHOR_SUFFIX)]
+    return {stem + s: anchors[stem + s] for s in ORACLE_HOPS_SUFFIXES if stem + s in anchors}
+
+
+def check_anchor_hops(path, rows, anchor, bounds):
+    """The --anchor's oracle hop bounds on the oracle arm's rows of PATH;
+    returns how many rows were judged (0: the file has no oracle row)."""
+    with open(path) as fh:
+        oracle = oracle_arm(fh.read())
+    judged = 0
+    for r in rows:
+        if oracle is None or r["proto"] != oracle:
+            continue
+        try:
+            hops = float(r.get("hops"))
+        except (TypeError, ValueError):
+            continue
+        judged += 1
+        tag = f"{r['where']}/{r['proto']}"
+        for bound_key, bound in sorted(bounds.items()):
+            low = bound_key.endswith("_min")
+            if (hops < bound) if low else (hops > bound):
+                report(
+                    "FAIL",
+                    f"{tag}: anchor '{anchor}' oracle hops {'floor' if low else 'ceiling'} "
+                    f"{bound} violated (hopsMean {hops}) — the cell's geometry is not "
+                    "the one the anchor derives; do not trust these numbers",
+                )
+            else:
+                print(
+                    f"ok: {tag}: anchor '{anchor}' oracle hops "
+                    f"{'floor' if low else 'ceiling'} {bound} met (hopsMean {hops})"
+                )
+    return judged
 
 
 def set_roles(a):
@@ -2848,7 +2905,10 @@ def cmd_results(a):
     anchor = getattr(a, "anchor", None)
     if anchor and not anchors_path:
         sys.exit("FAIL: --anchor needs --anchors FILE (the floors are data, not code)")
-    floor = anchors[anchor_key(anchor, anchors)] if anchor else None
+    key = anchor_key(anchor, anchors) if anchor else None
+    floor = anchors[key] if key else None
+    hop_bounds = anchor_hop_bounds(key, anchors) if key else {}
+    hops_checked = 0
     sat_floor = anchors.get(SAT_SINGLE_ISL_KEY)
     # The arms an anchor floor judges; none named = every row.
     anchor_arms = csv_arms(getattr(a, "anchor_arms", None))
@@ -3350,6 +3410,16 @@ def cmd_results(a):
                     )
                 else:
                     print(f"ok: {tag}: anchor '{anchor}' floor {floor} met ({arm} PDR {pdr})")
+        if hop_bounds:
+            hops_checked += check_anchor_hops(path, rows, anchor, hop_bounds)
+    if hop_bounds and not hops_checked:
+        report(
+            "WARN",
+            f"anchor '{anchor}' declares oracle hop bound(s) "
+            f"({', '.join(sorted(hop_bounds))}), but no input has a row of the oracle "
+            "arm (--oracle, or a file's ##ORACLE## rows): not checked; run the anchor "
+            "cell with the oracle arm (ns3-tools#55)",
+        )
     if n == 0:
         report("FAIL", "no result rows parsed from the input")
     else:
@@ -3366,10 +3436,57 @@ def verdict():
     sys.exit(1 if fails else 0)
 
 
-def main():
+def _catalogue():
+    """The catalogue reader (catalogue.py), as a package sibling or by its
+    path when this file runs as a script or is loaded from source."""
+    try:
+        from . import catalogue
+    except ImportError:
+        import importlib.util
+
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalogue.py")
+        spec = importlib.util.spec_from_file_location("ns3_tool_catalogue", path)
+        catalogue = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(catalogue)
+    return catalogue
+
+
+def family_defaults(parser, family, cell, base):
+    """ns3-tools#55: make FAMILY's CELL (the catalogue's preflight knobs) the
+    preflight defaults; an explicit flag still wins."""
+    cat = _catalogue()
+    try:
+        knobs = cat.preflight_knobs(cat.root(base), family, cell)
+    except cat.CatalogueError as e:
+        sys.exit(f"FAIL: --family {family}: {e}")
+    known = vars(parser.parse_args([]))
+    unknown = sorted(set(knobs) - set(known))
+    if unknown:
+        sys.exit(f"FAIL: --family {family}: unknown preflight knob(s): {', '.join(unknown)}")
+    # As strings, so argparse converts them as it does a command-line value:
+    # a knob from the catalogue prints exactly as the same knob typed.
+    parser.set_defaults(**{k: str(v) for k, v in knobs.items()})
+
+
+def build_parser():
+    """The command line: (the parser, its preflight subparser)."""
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("preflight")
+    # ns3-tools#55: a cell of the network-family catalogue (scenarios/) as the
+    # defaults of every knob below; main() applies it before parsing.
+    p.add_argument(
+        "--family",
+        metavar="NAME",
+        help="take the knobs of a catalogue family's cell (scenarios/NAME/preflight.toml); "
+        "explicit flags still win",
+    )
+    p.add_argument("--cell", metavar="NAME", help="the --family cell (default: the family's first)")
+    p.add_argument(
+        "--catalogue",
+        metavar="DIR",
+        help="the catalogue directory (default: $NS3_TOOL_SCENARIOS, else the checkout's scenarios/)",
+    )
     p.add_argument("--nodes", type=int, default=50)
     p.add_argument("--areaX", type=float, default=1500)
     p.add_argument("--areaY", type=float, default=300)
@@ -3448,7 +3565,8 @@ def main():
     r.add_argument(
         "--anchors",
         metavar="FILE",
-        help="the anchor floors, 'key: number' lines (AntHocNet's ns3/tools/anchors.yml schema)",
+        help="the anchor floors, 'key: number' lines (AntHocNet's ns3/tools/anchors.yml schema), "
+        "or a catalogue family's anchors.toml (scenarios/<family>/, ns3-tools#55)",
     )
     r.add_argument(
         "--anchor",
@@ -3489,7 +3607,23 @@ def main():
         default=100,
         help="the longest path a delivered packet can report (default 100)",
     )
-    args = ap.parse_args()
+    return ap, p
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    ap, pre = build_parser()
+    if argv[:1] == ["preflight"]:
+        # ns3-tools#55: the family's knobs become the defaults first.
+        scan = argparse.ArgumentParser(add_help=False)
+        for opt in ("--family", "--cell", "--catalogue"):
+            scan.add_argument(opt)
+        known, _rest = scan.parse_known_args(argv[1:])
+        if known.family:
+            family_defaults(pre, known.family, known.cell, known.catalogue)
+        elif known.cell:
+            ap.error("--cell needs --family")
+    args = ap.parse_args(argv)
     (cmd_preflight if args.cmd == "preflight" else cmd_results)(args)
 
 

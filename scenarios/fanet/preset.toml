@@ -1,0 +1,109 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The FANET family: routing-compare --scenario=fanet (a UAV swarm in a 3-D
+# box), and its cells. Values and sources adapted from swarm-routing/AntHocNet
+# docs/benchmarks/scenarios/fanet.md (GPL-2.0-only, AntHocNet #482); the values
+# are the ones routing-bench's preset resolves to
+# (ns3/routing-bench/model/routing-bench-harness.cc). Format: scenarios/README.md.
+schema = 1
+family = "fanet"
+title = "FANET: a UAV swarm in a 3-D field"
+scenario = "fanet"
+page = "docs/families/fanet.md"
+
+[values.nNodes]
+value = 30
+kind = "chosen"
+source = "inside the AntHocNet #298 envelope (20-40 UAVs); Yang et al. 2024 (https://doi.org/10.1038/s41598-024-64454-1) sweep 40-140. Fixed at 30 so the main cell's density clears 2 ln(n) (see range)"
+
+[values.areaX]
+value = 1000
+kind = "chosen"
+source = "the AntHocNet #298 envelope (about 1000 x 1000 x 300 m); published fields bracket it: 1500 x 1500 m (Yang et al. 2024, 2-D), a 1700 m cube (Makkar, Singh & Singh 2018, ns-3)"
+
+[values.areaY]
+value = 1000
+kind = "chosen"
+source = "as areaX"
+
+[values.areaZ]
+value = 300
+kind = "chosen"
+source = "the AntHocNet #298 envelope: a 300 m altitude extent keeps the swarm flat-ish, like a survey swarm, rather than a cube"
+
+[values.time]
+value = 900
+kind = "chosen"
+source = "the paper/thesis horizon, so a FANET cell weighs as much per seed as a MANET one"
+
+[values.speed]
+value = 30
+kind = "chosen"
+source = "the AntHocNet #298 envelope (10-30 m/s: small rotorcraft and slow fixed-wing); Yang et al. 2024 use maxima of 20-60 m/s"
+
+[values.speedMin]
+value = 10
+kind = "chosen"
+source = "keeps the swarm from idling: the harness's historical U(1, max) would put many UAVs near hover (AntHocNet #482)"
+
+[values.pause]
+value = 0
+kind = "harness"
+source = "Gauss-Markov nodes never stop: pause is inert, and the preset states 0"
+
+[values.range]
+value = 350
+kind = "chosen"
+source = "for density: the #481 preflight's in-box mean degree is 7.2 at 350 m, clearing 2 ln(30) = 6.8, so the main cell measures routing; published ranges bracket it (200 m, Yang et al. 2024; 1000 m, Biomo et al. 2015, https://doi.org/10.3390/aerospace2030392). Air-to-air links are line of sight"
+
+[values.flows]
+value = 10
+kind = "chosen"
+source = "low-rate telemetry; 10 flows on 30 nodes keeps the paper's sources-to-nodes ratio (20/50) roughly constant"
+
+[values.cbrBps]
+value = 2048
+kind = "sourced"
+source = "4 x 64-byte packets/s per flow, the AntHocNet thesis's rate (Ducatelle 2007 §5.1.3); about 1 % of the 2 Mbit/s channel, so the cell measures routing, not congestion"
+
+[values.mobility]
+value = "gaussmarkov"
+kind = "sourced"
+source = "the standard FANET entity model: Gauss-Markov in a 3-D box in ns-3 (Makkar, Singh & Singh 2018), in 2-D (Yang et al. 2024); Biomo et al. 2015 find (enhanced) Gauss-Markov best suited to UAV networks"
+
+[values.propagation]
+value = "range"
+kind = "sourced"
+source = "two-ray ground reflection (and Nakagami on it) assumes antennas over a ground plane, meaningless between aircraft; the harness refuses them with --areaZ (AntHocNet #480)"
+
+[values.transport]
+value = "udp"
+kind = "harness"
+source = "routing-compare's default: CBR over UDP"
+
+[values.runs]
+value = 1
+kind = "harness"
+source = "routing-compare's default; a comparison passes --runs=20 or more (golden rule 6)"
+
+[fixed.startWindow]
+value = 180
+kind = "chosen"
+source = "flows start uniformly in [0, 180] s, as in the paper preset"
+
+[fixed.gaussMarkovAlpha]
+value = 0.85
+kind = "harness"
+source = "the harness's Gauss-Markov memory since AntHocNet #61 (1 s time step, uniform mean direction), shared by the planar and 3-D arms"
+
+[fixed.gaussMarkovPitch]
+value = "mean U(-0.05, 0.05) rad; perturbation Normal(0, 0.02), bounded at 0.04 rad"
+kind = "assumption"
+source = "no published FANET evaluation found states its Gauss-Markov pitch parameters; the harness's direction perturbation scaled down by ten (AntHocNet #480)"
+
+[cells.fanet-main]
+class = "FANET / 3-D, routing"
+flags = { scenario = "fanet" }
+
+[cells.fanet-sparse]
+class = "FANET / 3-D, partition"
+flags = { scenario = "fanet", range = 250 }

@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The MANET family's preflight: per cell, the ns3-scenario-check preflight
+# knobs (equal to the values the preset resolves to; check-scenarios.py checks
+# it) and the verdict line they give. Run one with
+#   ns3-scenario-check preflight --family manet --cell paper-base
+# Format: scenarios/README.md.
+schema = 1
+family = "manet"
+
+[cells.paper-base]
+knobs = { nodes = 50, areaX = 1500, areaY = 300, range = 300, time = 900, pause = 30, speed = 20, flows = 20, cbrBps = 512, mobility = "rwp", propagation = "range" }
+verdict = "WARN (0 fail, 1 warn)"
+why = "the #230 path-diversity WARN: at 20 m/s a 300 m link lives ~7.5 s, under the harness's 10 s pathWindowS, so path_div_* is unquotable here; PDR, delay and NRL are not affected"
+
+[cells.sparse-static]
+knobs = { nodes = 50, areaX = 1500, areaY = 300, range = 300, time = 900, pause = 900, speed = 20, flows = 20, cbrBps = 512, mobility = "rwp", propagation = "range" }
+verdict = "WARN (0 fail, 1 warn)"
+why = "pause >= sim time: the static regime, which is this cell's purpose"
+
+[cells.high-mobility]
+knobs = { nodes = 50, areaX = 1500, areaY = 300, range = 300, time = 900, pause = 0, speed = 20, flows = 20, cbrBps = 512, mobility = "rwp", propagation = "range" }
+verdict = "WARN (0 fail, 1 warn)"
+why = "the #230 path-diversity WARN, as paper-base"
+
+[cells.large-scale]
+knobs = { nodes = 100, areaX = 2100, areaY = 700, range = 300, time = 900, pause = 30, speed = 20, flows = 20, cbrBps = 512, mobility = "rwp", propagation = "range" }
+verdict = "WARN (0 fail, 1 warn)"
+why = "the #230 path-diversity WARN, as paper-base"

@@ -30,6 +30,17 @@ Bring your own protocol: from the released packages to a paired, gated
 comparison of a new arm against AODV, OLSR and DSDV, with a worked example:
 [docs/bring-your-own-protocol.md](docs/bring-your-own-protocol.md).
 
+The network families any arm runs in are catalogued in
+[scenarios/](scenarios/README.md). Each family has its routing-compare
+preset, its preflight rules and its anchors, every value sourced, and a
+"configure it with ns-3" page:
+- [MANET](docs/families/manet.md): the Broch/CMU field;
+- [FANET](docs/families/fanet.md): a UAV swarm in 3-D;
+- [VANET](docs/families/vanet.md): a city street grid.
+
+`ns3-scenario-check preflight --family` and `ns3-tool sweep --family` read
+the catalogue.
+
 What each release must show, and what blocks what: [docs/roadmap.md](docs/roadmap.md).
 
 Upstream ns-3 bugs the org found, their workarounds and their upstream status:

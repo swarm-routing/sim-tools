@@ -1,0 +1,115 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The MANET family: routing-compare --scenario=paper (the Broch/CMU field that
+# the AntHocNet paper's base scenario uses), and the cells built on it. Values
+# and sources adapted from swarm-routing/AntHocNet
+# docs/benchmarks/scenarios/paper-base.md and ns3/tools/run-scenarios.py
+# (GPL-2.0-only); the values are the ones routing-bench's preset resolves to
+# (ns3/routing-bench/model/routing-bench-harness.cc). Format: scenarios/README.md.
+schema = 1
+family = "manet"
+title = "MANET: the Broch/CMU random-waypoint field"
+scenario = "paper"
+page = "docs/families/manet.md"
+
+[values.nNodes]
+value = 50
+kind = "sourced"
+source = "Broch et al. 1998 (https://doi.org/10.1145/288235.288256): 50 nodes; the AntHocNet paper's base scenario (Di Caro et al. 2004 §4, https://doi.org/10.1007/978-3-540-30217-9_47)"
+
+[values.areaX]
+value = 1500
+kind = "sourced"
+source = "Broch et al. 1998: a 1500 x 300 m field; Di Caro et al. 2004 §4"
+
+[values.areaY]
+value = 300
+kind = "sourced"
+source = "Broch et al. 1998: a 1500 x 300 m field; Di Caro et al. 2004 §4"
+
+[values.areaZ]
+value = 0
+kind = "harness"
+source = "routing-compare's default: a planar field (3-D is the fanet family)"
+
+[values.time]
+value = 900
+kind = "sourced"
+source = "Broch et al. 1998: 900 s runs"
+
+[values.speed]
+value = 20
+kind = "sourced"
+source = "Broch et al. 1998: random waypoint, maximum speed 20 m/s; Di Caro et al. 2004 §4"
+
+[values.speedMin]
+value = 1
+kind = "harness"
+source = "routing-compare's default floor: speeds U(1, speed), so no node idles at zero speed"
+
+[values.pause]
+value = 30
+kind = "sourced"
+source = "Di Caro et al. 2004 §4: 30 s pause; one point of Broch et al. 1998's 0-900 s pause sweep"
+
+[values.range]
+value = 300
+kind = "sourced"
+source = "Di Caro et al. 2004 §4: 300 m range (Broch et al. 1998 used 250 m); a disk, see propagation"
+
+[values.flows]
+value = 20
+kind = "sourced"
+source = "Di Caro et al. 2004 §4: 20 CBR sources; one of Broch et al. 1998's 10/20/30 source counts"
+
+[values.cbrBps]
+value = 512
+kind = "sourced"
+source = "Di Caro et al. 2004 §4: one 64-byte packet per second per source"
+
+[values.mobility]
+value = "rwp"
+kind = "sourced"
+source = "Broch et al. 1998: random waypoint"
+
+[values.propagation]
+value = "range"
+kind = "harness"
+source = "routing-compare's default disk channel (the calibration disentangler, AntHocNet #24); --propagation=tworay|nakagami are the channel arms"
+
+[values.transport]
+value = "udp"
+kind = "harness"
+source = "routing-compare's default: CBR over UDP, what every published number used"
+
+[values.runs]
+value = 1
+kind = "harness"
+source = "routing-compare's default; a comparison passes --runs=20 or more (golden rule 6)"
+
+[fixed.startWindow]
+value = 180
+kind = "chosen"
+source = "flows start uniformly in [0, 180] s (the paper preset's start window; no flag sets it)"
+
+[fixed.radio]
+value = "802.11b DSSS, constant 2 Mbit/s"
+kind = "sourced"
+source = "Broch et al. 1998 and Di Caro et al. 2004 §4: 802.11 DCF at 2 Mbit/s (--standard=80211b --rateManager=constant2, the defaults)"
+
+# The cells: the discrete taxonomy's cells on this preset (ns3-tool sweep's
+# DISCRETE; python/tests/test_catalogue.py holds them equal).
+[cells.paper-base]
+class = "sparse / mobile"
+flags = { scenario = "paper" }
+
+[cells.sparse-static]
+class = "sparse / static"
+flags = { scenario = "paper", pause = 900 }
+
+[cells.high-mobility]
+class = "sparse / high-mobility"
+flags = { scenario = "paper", pause = 0 }
+
+[cells.large-scale]
+class = "large / mobile"
+flags = { scenario = "paper", nNodes = 100, areaX = 2100, areaY = 700 }
