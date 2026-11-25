@@ -27,6 +27,7 @@ test: ## the fast tests CI runs on every PR
 	python3 -I tools/checks/check-refs.py docs/ns3-bugs.md docs/ns3-rcapa/
 	python3 -I tools/checks/check-scenarios.py
 	python3 -I tools/checks/check-published-paths.py
+	python3 -I tools/checks/check-python-boundary.py
 
 lint: org-tools ## static checks, no changes
 	ruff check --config "$(ORG_DIR)/ruff.toml" python tools

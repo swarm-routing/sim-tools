@@ -1,0 +1,41 @@
+diff --git a/src/aodv/model/aodv-rtable.cc b/src/aodv/model/aodv-rtable.cc
+index 1e6c7e43034f6e20b259b31cebe8ccd742625fc0..ac27945031cf77e852a890adf58ea58020629ff7 100644
+--- a/src/aodv/model/aodv-rtable.cc
++++ b/src/aodv/model/aodv-rtable.cc
+@@ -46,13 +46,13 @@ RoutingTableEntry::RoutingTableEntry(Ptr<NetDevice> dev,
+       m_validSeqNo(vSeqNo),
+       m_seqNo(seqNo),
+       m_hops(hops),
+-      m_lifeTime(lifetime + Simulator::Now()),
+       m_iface(iface),
+       m_flag(VALID),
+       m_reqCount(0),
+       m_blackListState(false),
+       m_blackListTimeout(Simulator::Now())
+ {
++    SetLifeTime(lifetime);
+     m_ipv4Route = Create<Ipv4Route>();
+     m_ipv4Route->SetDestination(dst);
+     m_ipv4Route->SetGateway(nextHop);
+diff --git a/src/aodv/model/aodv-rtable.h b/src/aodv/model/aodv-rtable.h
+index cd7917271ad09e3b8432e340e5678e93a7458c56..2c539544ea3fd4959a1d55916c58c74923b0dad1 100644
+--- a/src/aodv/model/aodv-rtable.h
++++ b/src/aodv/model/aodv-rtable.h
+@@ -250,12 +250,15 @@ class RoutingTableEntry
+     }
+ 
+     /**
+-     * Set the lifetime
++     * Set the lifetime, saturated at Simulator::GetMaximumSimulationTime()
++     * (the lifetime of a route that never expires): adding Now() to it after
++     * t=0 would overflow int64
+      * @param lt The lifetime
+      */
+     void SetLifeTime(Time lt)
+     {
+-        m_lifeTime = lt + Simulator::Now();
++        const Time maxTime = Simulator::GetMaximumSimulationTime();
++        m_lifeTime = lt < maxTime - Simulator::Now() ? lt + Simulator::Now() : maxTime;
+     }
+ 
+     /**

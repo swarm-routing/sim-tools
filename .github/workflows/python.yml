@@ -33,7 +33,7 @@ jobs:
         with:
           egress-policy: audit
       # a docs-only change skips the steps below; the check still reports (swarm-routing/.github#581)
-      - uses: swarm-routing/.github/.github/actions/changes@10d9057fc3bcd21f39be701885929db4c056e6f8 # main@2026-11-25
+      - uses: swarm-routing/.github/.github/actions/changes@ef0827e0b16689747428b2a6025dbaaa81f655d9 # main@2026-11-25
         id: changes
         timeout-minutes: 2
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -64,6 +64,11 @@ jobs:
       - name: The family catalogue (scenarios/)
         # reads docs/families/: runs on a docs-only change too
         run: python3 -I tools/checks/check-scenarios.py
+      # #377: the agnostic modules of python/ns3_tool import no ns-3-bound one
+      # and name no ns-3 path or program (docs/layout.md "Python modules").
+      - name: The simulator-agnostic / ns-3 boundary (python/ns3_tool)
+        # reads docs/layout.md: runs on a docs-only change too
+        run: python3 -I tools/checks/check-python-boundary.py
       - name: Install the package; console scripts run
         if: steps.changes.outputs.docs-only != 'true'
         timeout-minutes: 5  # an install, as the PyYAML step (seconds in a green run)
@@ -93,7 +98,7 @@ jobs:
         with:
           egress-policy: audit
       # a docs-only change skips the steps below; the check still reports (swarm-routing/.github#581)
-      - uses: swarm-routing/.github/.github/actions/changes@10d9057fc3bcd21f39be701885929db4c056e6f8 # main@2026-11-25
+      - uses: swarm-routing/.github/.github/actions/changes@ef0827e0b16689747428b2a6025dbaaa81f655d9 # main@2026-11-25
         id: changes
         timeout-minutes: 2
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

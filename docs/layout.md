@@ -21,7 +21,7 @@ even where today it names ns-3 programs (the Python column below says which).
 |------|------|----------|
 | harness | the comparison harness: scenario, traffic, measurement (topology oracle, drop book), markers, the arm registry and the stock arms | `<sim>/routing-bench/` (ns-3) |
 | workaround | our code avoiding an upstream simulator bug at run time; names its register ID | the module that needs it (NS3-001's guard, NS3-002's arm isolation: `ns3/routing-bench/`) |
-| patch | a diff to the simulator's own source, self-detecting, one per register ID | `<sim>/patches/<ID>/` *(planned, #378)* |
+| patch | a diff to the simulator's own source, self-detecting, one per register ID | `<sim>/patches/<ID>/` (`ns3/patches/`, its convention in [`ns3/patches/README.md`](../ns3/patches/README.md)) |
 | arm | a comparator arm we did not design (secure, learned, DTN), its own contrib module | `<sim>/arms/<name>/` *(planned, epic #15)* |
 | probe | non-intrusive trace readers (oracle, drop book) on any program | `<sim>/probes/` *(planned, #40)* |
 | reader | marker-line readers, paired statistics, views | `python/ns3_tool/` |
@@ -45,7 +45,7 @@ Licence column: **GPL** is `GPL-2.0-only`, **dual** is `MIT OR GPL-2.0-only`
 | `ns3/routing-bench/` (`model/routing-bench-{arm,harness,run,internal}`, `source-refusal-counter`, `urban-obstacle-loss-model`, `livelock-watch`; `helper/stock-arms`; `examples/`; `test/`) | ns-3 | harness | GPL | `routing-bench-<ver>.tar.gz` → vcpkg port `sim-tools-ns3`; git path `sim-tools@<ref>:ns3/routing-bench` | sim-containers protocol image (`docker/protocol/Dockerfile` `ROUTING_BENCH_SPEC`, `tools/protocol_images.py`), sim-containers `test/downstream.txt` (`@main`); swarm-routing/.github `reusable-ns3-image.yml` and `reusable-benchmark-cell.yml` `dependencies:` (every protocol's CI and cells); campaign plans' `modules`; arm modules in protocol repos (`helper/<m>-bench-arms.cc`, `${librouting-bench}`); AntHocNet (`ns3-tools.lock`, its tooling) |
 | `ns3/routing-bench/{model/icmp-error-guard-routing,helper/icmp-error-guard-helper}.*` | ns-3 | workaround (NS3-001) | GPL | inside the harness tarball | the `aodv` stock arm; AODV-derived protocol arms (`reusable-ns3-image.yml`) |
 | `ns3/routing-bench/model/arm-isolation.*` | ns-3 | workaround (NS3-002: `--isolateArms` default on) and harness | GPL | inside the harness tarball | every comparison run |
-| `ns3/patches/<ID>/` *(planned, #378; NS3-005 on its branch, #374)* | ns-3 | patch | GPL | `sim-tools-ns3-patches-<ver>.tar.gz` *(planned, #379)* | vcpkg `ns3` port, which downloads the released asset and keeps no copies *(#380; NS3-001's patch is in swarm-routing/vcpkg-registry `ports/ns3/patches/` today)*; the patched `ns3-dev` image variant beside the stock tags, self-detecting patches only *(#381; first case NS3-005)* |
+| `ns3/patches/<ID>/` (NS3-001, NS3-005), `ns3/patches/apply.sh` (the runner: `not-affected \| applied \| already-fixed \| refused`), `ns3/patches/README.md` (the convention) | ns-3 | patch | GPL | `sim-tools-ns3-patches-<ver>.tar.gz` *(planned, #379)* | CI (`ns3.yml` `ns3-patches`); vcpkg `ns3` port, which downloads the released asset and keeps no copies *(#380; until then it carries its own copy of NS3-001's patch, byte-identical to `ns3/patches/NS3-001/`)*; the patched `ns3-dev` image variant beside the stock tags, self-detecting patches only *(#381; first case NS3-005)* |
 | `ns3/arms/<name>/` *(planned, epic #15)* | ns-3 | arm | GPL | in the ns-3 tarball (#382) | campaigns, the guide |
 | `ns3/probes/` *(planned, #40)* | ns-3 | probe | GPL | in the ns-3 tarball (#382) | any ns-3 program |
 | `omnetpp/` *(planned, #383)* | OMNeT++ | as `ns3/` | decided in its PR | `sim-tools-omnetpp` | swarm-routing/swarm-adapter-omnet |
@@ -55,7 +55,7 @@ Licence column: **GPL** is `GPL-2.0-only`, **dual** is `MIT OR GPL-2.0-only`
 | `scenarios/<family>/{preset,preflight,anchors}.toml`, `scenarios/README.md` | agnostic data (presets are `routing-compare` flags) | catalogue | GPL | not packaged: read from a checkout (`--catalogue`, `$NS3_TOOL_SCENARIOS`) | `ns3-tool sweep --family`, `ns3-scenario-check`, `check-scenarios.py`, `docs/families/` |
 | `campaigns/*.toml` | agnostic (pins ns-3 images and modules) | plan | GPL | not packaged; copied into each benchmarks run | `campaign-image.yml`, `campaign-cell.yml`, swarm-routing/benchmarks |
 | `tools/checks/check-stock-arms.sh`, `arm-delivers.sh`, `check-scaffold-arm.sh`, `check-perf-markers.sh` | ns-3 | check | dual | not shipped (#350) | `ns3.yml`; sim-containers `test/downstream.txt` (`check-stock-arms.sh` at `@main`); the guide |
-| `tools/checks/check-scenarios.py`, `check-refs.py`, `tests/` | agnostic | check | dual | not shipped | `make test`, CI |
+| `tools/checks/check-scenarios.py`, `check-refs.py`, `check-python-boundary.py` (#377), `tests/` | agnostic | check | dual | not shipped | `make test`, CI |
 | `tools/release/dist.sh`, `tools/requirements/` | agnostic (builds the ns-3 and Python assets) | release | dual | not shipped | `make dist`, `release.yml` |
 | `.cz.toml`, `CHANGELOG.md`, `CITATION.cff` | agnostic | release | GPL | the release, Zenodo | swarm-routing/.github `reusable-release.yml` |
 | `.github/workflows/ns3.yml` | ns-3 (plus the Python quality job) | check | GPL | — | every PR |
@@ -80,7 +80,7 @@ ns-3-bound one and names no ns-3 path or program.
 |--------|------|-----------|
 | `bench_parse`, `stats_util`, `native_view`, `comparator_view`, `pool_runs`, `sweep_summary` | reader | agnostic |
 | `diagnose` | reader (drop book, scenario_check results) | agnostic |
-| `scenario_check` | plausibility | agnostic |
+| `scenario_check` | plausibility | agnostic (one recorded exception: it loads `catalogue` lazily, only for `--family` and an `anchors.toml` path; `check-python-boundary.py` `ALLOWED_IMPORTS`) |
 | `cost` | campaign (runner-minute model) | agnostic |
 | `cli` | dispatcher | agnostic (dispatches to ns-3-bound commands too) |
 | `catalogue` | catalogue reader; turns presets into `routing-compare` flags | ns-3 |
