@@ -873,7 +873,22 @@ def frozen_ref(plan, repo, state, dry_run):
             raise
         have = None
     if have is None:
-        gh("-X", "POST", f"repos/{repo}/git/refs", "-f", f"ref=refs/tags/{tag}", "-f", f"sha={sha}")
+        try:
+            gh(
+                "-X",
+                "POST",
+                f"repos/{repo}/git/refs",
+                "-f",
+                f"ref=refs/tags/{tag}",
+                "-f",
+                f"sha={sha}",
+            )
+        except RuntimeError as e:  # no write access to refs: refuse, never dispatch unfrozen
+            sys.exit(
+                f"cannot create tag {tag} in {repo} ({e}); dispatch where the token may "
+                f"create tags, or set `freeze: false` in the plan to dispatch at {plan['ref']} "
+                "without the freeze"
+            )
     elif have != sha:  # an earlier campaign of this generation, or a moved tag: never reuse
         sys.exit(
             f"tag {tag} exists at {have[:12]}, not at {plan['ref']} ({sha[:12]}): "

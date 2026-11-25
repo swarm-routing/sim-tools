@@ -146,6 +146,8 @@ class FakeGh:
                 raise RuntimeError(f"gh api {url}: HTTP 404: Not Found")
             return self.tags[tag] + "\n"
         if url.endswith("/git/refs"):
+            if getattr(self, "refuse_refs", False):
+                raise RuntimeError(f"gh api -X: HTTP 403: write access not permitted ({url})")
             fields = dict(x.split("=", 1) for x in args[3:] if "=" in x)
             self.tags[fields["ref"].removeprefix("refs/tags/")] = fields["sha"]
             return ""
@@ -339,6 +341,11 @@ def _dispatch_freeze_edges():
         fake.tags["campaign/vtest"] = "a" * 40  # the same commit: a lost state.json, resumed
         dispatch(plan_of(d), os.path.join(d, "w3"), fake)
         expect(len(fake.dispatched) == 2, "freeze-same-commit", fake.dispatched)
+        fake = FakeGh()
+        fake.refuse_refs = True  # a token that may not create tags (a sandboxed proxy)
+        err = dispatch(plan_of(d), os.path.join(d, "w5"), fake)
+        expect("cannot create tag campaign/vtest" in err and "freeze: false" in err
+               and not fake.dispatched, "freeze-refused", err)  # fmt: skip
         fake = FakeGh()
         err = dispatch(plan_of(d), os.path.join(d, "w4"), fake, dry_run=True)
         expect(not fake.tags and not fake.dispatched and "first dispatch tags it" in err,
