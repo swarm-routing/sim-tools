@@ -287,14 +287,32 @@ their own account, through
 [swarm-routing/ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report);
 the link then goes into the ticket, this page and the register.
 
-Before filing: the nsnam GitLab issues were not searched for an existing
-report in this session; the bridge's pre-filing step should.
+Before filing:
+
+**Duplicate search, 2026-11-25** (from gitlab.com's public API). Searched
+nsnam/ns-3-dev issues and merge requests, all states: every item with "aodv"
+in the title (21 in all), and the keywords "aodv overflow", "aodv lifetime",
+`GetMaximumSimulationTime`, "signed integer overflow", UBSan and sanitizer,
+"aodv hello", "hello timer", `m_htimer` and `NotifyInterfaceUp`. Found no
+existing report of the missing hello restart. The nearest are
+[nsnam/ns-3-dev#368](https://gitlab.com/nsnam/ns-3-dev/-/issues/368) and
+[nsnam/ns-3-dev!2785](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/2785) (AODV parameter validation),
+[nsnam/ns-3-dev!399](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/399) (time printing) and
+[nsnam/ns-3-dev#135](https://gitlab.com/nsnam/ns-3-dev/-/issues/135) (IP interfaces reacting to device up/down);
+none covers it. The legacy pre-2019 Bugzilla at nsnam.org was unreachable
+(database error), so it was not searched. `master` head `d65e02b1`
+(2026-11-25 07:10Z): the last `src/aodv` change is `c31326d3` (2026-11-11);
+on a source read, `aodv-rtable.cc:49` still has
+`m_lifeTime(lifetime + Simulator::Now())` and `m_htimer` is still scheduled
+only at start and in `HelloTimerExpire`, so both bugs are still present by
+reading; the runs at `d07400ba` and `8a06b457` stand.
 
 ## Timeline
 
 | Date | Event |
 |------|-------|
 | 2026-11-24 | seen in the `--failures` chain test of [swarm-routing/sim-tools#361](https://github.com/swarm-routing/sim-tools/pull/361) on ns-3.49 |
+| 2026-11-25 | Duplicate search of nsnam/ns-3-dev (issues and merge requests, all states): no existing report; `master` `d65e02b1` still has the bug by source read (see "Upstream report"). |
 | 2026-11-25 | RCAPA ticket [swarm-routing/sim-tools#362](https://github.com/swarm-routing/sim-tools/issues/362) opened with the source read; standalone reproducer run on ns-3.49 and ns-3-dev `master` `8a06b457` (reproduced on both); fix run on both; upstream draft on the ticket |
 
 ## Links

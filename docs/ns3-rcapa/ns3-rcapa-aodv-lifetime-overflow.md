@@ -328,11 +328,32 @@ Draft:
 > that sets an AODV interface down and up after t=0 under the sanitizers
 > would keep it fixed.
 
+Before filing:
+
+**Duplicate search, 2026-11-25** (from gitlab.com's public API). Searched
+nsnam/ns-3-dev issues and merge requests, all states: every item with "aodv"
+in the title (21 in all), and the keywords "aodv overflow", "aodv lifetime",
+`GetMaximumSimulationTime`, "signed integer overflow", UBSan and sanitizer,
+"aodv hello", "hello timer", `m_htimer` and `NotifyInterfaceUp`. Found no
+existing report of this bug. The nearest are
+[nsnam/ns-3-dev#368](https://gitlab.com/nsnam/ns-3-dev/-/issues/368) and
+[nsnam/ns-3-dev!2785](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/2785) (AODV parameter validation),
+[nsnam/ns-3-dev!399](https://gitlab.com/nsnam/ns-3-dev/-/merge_requests/399) (time printing) and
+[nsnam/ns-3-dev#135](https://gitlab.com/nsnam/ns-3-dev/-/issues/135) (IP interfaces reacting to device up/down);
+none covers it. The legacy pre-2019 Bugzilla at nsnam.org was unreachable
+(database error), so it was not searched. `master` head `d65e02b1`
+(2026-11-25 07:10Z): the last `src/aodv` change is `c31326d3` (2026-11-11);
+on a source read, `aodv-rtable.cc:49` still has
+`m_lifeTime(lifetime + Simulator::Now())` and `m_htimer` is still scheduled
+only at start and in `HelloTimerExpire`, so both bugs are still present by
+reading; the runs at `d07400ba` and `8a06b457` stand.
+
 ## Timeline
 
 | Date | Event |
 |------|-------|
 | 2026-11-25 | The [swarm-routing/sim-tools#361](https://github.com/swarm-routing/sim-tools/pull/361) shepherd sees UBSan abort a `--failures` restart in `ns3-dev:latest-sanitized`. |
+| 2026-11-25 | Duplicate search of nsnam/ns-3-dev (issues and merge requests, all states): no existing report; `master` `d65e02b1` still has the bug by source read (see "Upstream report"). |
 | 2026-11-25 | RCAPA ticket [swarm-routing/sim-tools#374](https://github.com/swarm-routing/sim-tools/issues/374) opened; standalone reproducer run on ns-3.49 and ns-3-dev `master` `d07400ba`; source read back to ns-3.7; patch, apply script and test written and run. |
 
 ## Links
