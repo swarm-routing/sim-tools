@@ -26,9 +26,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "dry-run: bump, build, attest and verify on the runner only; bump: open the bump PR (merging it releases); release-notes: re-render the notes of the release `tag` from CHANGELOG.md"
+        description: "dry-run: bump, build, attest and verify on the runner only; bump: open the bump PR (merging it releases); release-notes: re-render the notes of the release `tag` from CHANGELOG.md; publish: release the merged bump commit `sha` that never released"
         type: choice
-        options: [dry-run, bump, release-notes]
+        options: [dry-run, bump, release-notes, publish]
         default: dry-run
       increment:
         description: "auto: Commitizen picks the bump from the commits; PATCH, MINOR or MAJOR force it (cz bump --increment; MAJOR for v1.0.0 and v2.0.0)"
@@ -37,6 +37,10 @@ on:
         default: auto
       tag:
         description: "release-notes only: the existing release whose notes are re-rendered, vX.Y.Z (swarm-routing/.github#524)"
+        type: string
+        default: ''
+      sha:
+        description: "publish only: the merged bump commit (40-hex, on main) to release (swarm-routing/.github#943)"
         type: string
         default: ''
   push:
@@ -50,14 +54,16 @@ concurrency:
   cancel-in-progress: false
 jobs:
   release:
-    # Saves a runner on ordinary pushes; the workflow itself checks the PR.
-    if: "${{ github.event_name != 'push' || startsWith(github.event.head_commit.message, 'chore(release): bump version ') }}"
+    # Saves a runner on ordinary pushes; the workflow itself checks the PR. Any
+    # commit of the push, not only its head: a merge queue batches (#943).
+    if: "${{ github.event_name != 'push' || contains(toJSON(github.event.commits.*.message), 'chore(release): bump version ') }}"
     permissions: { contents: write, pull-requests: write, id-token: write, attestations: write }
     uses: swarm-routing/.github/.github/workflows/reusable-release.yml@e4ba96af97d87fdde768f9ef46d9dc4585c6c196 # main@2026-11-25
     with:
       mode: ${{ inputs.mode }}   # empty on push: release
       increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}   # '' for auto and on push
       tag: ${{ inputs.tag }}   # release-notes only; '' on push (swarm-routing/.github#524)
+      sha: ${{ inputs.sha }}   # publish only; '' on push (swarm-routing/.github#943)
       # a dry run builds AntHocNet against this commit, report-only
       # (.github/downstream.txt, swarm-routing/.github#482)
       downstream-consumers: .github/downstream.txt
