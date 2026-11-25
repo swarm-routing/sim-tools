@@ -197,6 +197,10 @@ jobs:
         if: needs.changes.outputs.docs-only != 'true' && (matrix.version == 'latest')
         timeout-minutes: 15
         run: bash tools/checks/check-perf-markers.sh /opt/ns-3 "olsr dsdv"
+      - name: "The family catalogue's presets are what routing-compare prints in ##CONFIG## (#55)"
+        if: needs.changes.outputs.docs-only != 'true' && (matrix.version == 'latest')
+        timeout-minutes: 10
+        run: bash tools/checks/check-scenario-configs.sh /opt/ns-3
 
   scaffold:
     needs: changes

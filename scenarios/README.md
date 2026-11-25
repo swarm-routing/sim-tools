@@ -100,18 +100,14 @@ Cell names are unique across the catalogue.
    cell: the cell name, a TAB, then routing-compare's arguments for a
    1-second run. Run each line's arguments into `DIR/<cell>.txt`. Then
    `--configs DIR` compares each file's `##CONFIG##` line with the
-   catalogue. From the checkout root, with routing-bench built into the
-   image's tree at `/opt/ns-3`:
+   catalogue. `tools/checks/check-scenario-configs.sh NS3DIR` does both
+   steps on a built tree, and CI runs it (`ns3.yml`, the stock-arms job).
+   From the checkout root:
 
    ```bash
-   mkdir -p configs
-   python3 tools/checks/check-scenarios.py --commands > configs/commands.tsv
-   docker run --rm -v "$PWD:/src" ghcr.io/swarm-routing/ns3-dev:latest-debug bash -c \
-     'ns3-build-contrib routing-bench=/src/ns3/routing-bench && cd /opt/ns-3 &&
-      while IFS=$'"'"'\t'"'"' read -r cell args; do
-        ./ns3 run "routing-compare $args" > "/src/configs/$cell.txt"
-      done < /src/configs/commands.tsv'
-   python3 tools/checks/check-scenarios.py --configs configs
+   docker run --rm -v "$PWD:/src:ro" ghcr.io/swarm-routing/ns3-dev:latest-debug bash -c \
+     'ns3-build-contrib routing-bench=/src/ns3/routing-bench &&
+      bash /src/tools/checks/check-scenario-configs.sh /opt/ns-3'
    ```
 
 ## Provenance
