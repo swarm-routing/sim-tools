@@ -9,14 +9,14 @@
 #   bash ns3/patches/NS3-005/test.sh [/opt/ns-3]
 #
 # 1. apply.sh decides from the source: on copies of the tree's AODV routing
-#    table it applies on the stock source, skips on a patched one, skips on
-#    one fixed another way, skips with no AODV, and fails on a source with
-#    the bug that the patch does not fit.
+#    table it prints applied on the stock source, already-fixed on a patched
+#    one and on one fixed another way, not-affected with no AODV, and
+#    refused (exit 1) on a source with the bug that the patch does not fit.
 # 2. The reproducer (aodv-lifetime-overflow.cc) aborts under UBSan with the
 #    signed overflow on the stock tree.
 # 3. apply.sh patches the tree; the reproducer then runs clean, and the AODV
 #    suite passes.
-# 4. apply.sh run again on the patched tree skips.
+# 4. apply.sh run again on the patched tree prints already-fixed.
 set -euo pipefail
 
 ns3=${1:-/opt/ns-3}
@@ -40,9 +40,9 @@ grep -q 'm_lifeTime(lifetime + Simulator::Now())' "$ns3/src/aodv/model/aodv-rtab
     fail "$ns3 is not a stock tree with the bug (start from an unpatched image)"
 rtable stock
 out=$("$apply" "$work/stock") || fail "stock: exit $?"
-[[ $out == *"has the bug"*applied* ]] || fail "stock: $out"
+[[ $out == "NS3-005: applied: "* ]] || fail "stock: $out"
 out=$("$apply" "$work/stock") || fail "patched: exit $?"
-[[ $out == *"already has"*skipped* ]] || fail "patched: $out"
+[[ $out == "NS3-005: already-fixed: "* ]] || fail "patched: $out"
 rtable other-fix
 # an upstream fix written differently from ours: no unchecked add, no patch fit
 sed -i 's/m_lifeTime(lifetime + Simulator::Now())/m_lifeTime(SaturatedLifetime(lifetime))/' \
@@ -50,17 +50,17 @@ sed -i 's/m_lifeTime(lifetime + Simulator::Now())/m_lifeTime(SaturatedLifetime(l
 sed -i 's/m_lifeTime = lt + Simulator::Now();/m_lifeTime = SaturatedLifetime(lt);/' \
     "$work/other-fix/src/aodv/model/aodv-rtable.h"
 out=$("$apply" "$work/other-fix") || fail "other-fix: exit $?"
-[[ $out == *"no bug: skipped"* ]] || fail "other-fix: $out"
+[[ $out == "NS3-005: already-fixed: "*"fixed or rewritten"* ]] || fail "other-fix: $out"
 mkdir -p "$work/no-aodv"
 out=$("$apply" "$work/no-aodv") || fail "no-aodv: exit $?"
-[[ $out == *"skipped"* ]] || fail "no-aodv: $out"
+[[ $out == "NS3-005: not-affected: "* ]] || fail "no-aodv: $out"
 rtable drifted
 # the bug still there, the patch's context gone (as on ns-3.43 and older)
 sed -i 's/m_hops(hops),/m_hops(hops), \/\/ drifted/' "$work/drifted/src/aodv/model/aodv-rtable.cc"
 if out=$("$apply" "$work/drifted" 2>&1); then
-    fail "drifted: applied or skipped: $out"
+    fail "drifted: exit 0: $out"
 fi
-[[ $out == *"does not apply"* ]] || fail "drifted: $out"
+[[ $out == "NS3-005: refused: "*"does not apply"* ]] || fail "drifted: $out"
 echo "ok"
 
 repro() {
@@ -102,8 +102,8 @@ for suite in routing-aodv aodv-routing-id-cache routing-aodv-loopback routing-ao
 done
 echo "ok"
 
-echo "== 4. apply.sh skips on the patched tree"
+echo "== 4. apply.sh prints already-fixed on the patched tree"
 out=$("$apply" "$ns3") || fail "re-apply: exit $?"
-[[ $out == *"already has"*skipped* ]] || fail "re-apply: $out"
+[[ $out == "NS3-005: already-fixed: "* ]] || fail "re-apply: $out"
 echo "ok"
 echo "NS3-005: all checks passed"
