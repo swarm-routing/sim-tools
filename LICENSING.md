@@ -10,6 +10,7 @@
 | `python/tests/fixtures/` | data copied from AntHocNet: benchmark cells (`results/cells/`), its `ns3/tools/anchors.yml` and replay fixtures, and its `scenario_check.py` output on those cells | `GPL-2.0-only` |
 | `tools/` | standalone scripts (checks, release, data handling) | `MIT OR GPL-2.0-only` |
 | `ns3/` | the ns-3 contrib module: probes, emitters, arenas | `GPL-2.0-only` |
+| `ns3/patches/` | patches to upstream ns-3's own source, one directory per ns-3 bug (`NS3-NNN/`: the patch, its apply script, reproducer and test); a patch is a derived work of ns-3, its provenance in that directory's `README.md` | `GPL-2.0-only` |
 | `campaigns/` | campaign plans (the pre-registration, copied into each benchmarks run) | `GPL-2.0-only` |
 | `scenarios/` | the network-family catalogue: presets, preflight rules, anchors (data, adapted from AntHocNet's GPL-2.0-only family pages and anchors; ns3-tools#55) | `GPL-2.0-only` |
 | `docs/`, `README.md`, `AGENTS.md`, `CLAUDE.md` | docs | `GPL-2.0-only` |

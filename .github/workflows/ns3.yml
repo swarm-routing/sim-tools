@@ -239,3 +239,30 @@ jobs:
         run: |
           runner=$(find build/utils -name 'ns3.*-test-runner-*' -type f | head -1)
           for _ in 1 2 3; do "$runner" --suite=routing-bench; done
+
+  ns3-patches:
+    needs: changes
+    if: ${{ !cancelled() }}
+    # ns3/patches/NS3-NNN/: each patch to upstream ns-3 applies only where the
+    # bug is, its reproducer fails on the stock tree and passes patched
+    # (docs/ns3-bugs.md). Sanitized: NS3-005 is an overflow only UBSan shows.
+    name: ns-3 patches apply only where the bug is
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # no image on a docs-only change: the steps skip on the bare runner
+    container:
+      image: ${{ needs.changes.outputs.docs-only != 'true' && 'ghcr.io/swarm-routing/ns3-dev:latest-sanitized' || '' }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    # No Harden-Runner here (swarm-routing/.github#164): a job that runs entirely
+    # in a container cannot take it on a GitHub-hosted runner.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          persist-credentials: false
+      - name: "NS3-005: AODV route lifetime saturation (swarm-routing/sim-tools#374)"
+        if: needs.changes.outputs.docs-only != 'true'
+        timeout-minutes: 20
+        run: bash ns3/patches/NS3-005/test.sh /opt/ns-3
