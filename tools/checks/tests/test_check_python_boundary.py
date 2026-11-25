@@ -4,7 +4,9 @@
 """check-python-boundary.py's self-test (#377): the real tree passes, and each
 way of crossing the boundary is a finding. Exits non-zero on any failure."""
 
+import contextlib
 import importlib.util
+import io
 import tempfile
 from pathlib import Path
 
@@ -110,6 +112,9 @@ expect(
 real = cpb.check(ROOT / "docs/layout.md", ROOT / "python/ns3_tool")
 if real:
     problems.append(f"real tree: {real}")
+with contextlib.redirect_stdout(io.StringIO()) as out:
+    if cpb.main([]) != 0 or "0 finding(s)" not in out.getvalue():
+        problems.append(f"main: {out.getvalue()}")
 
 if problems:
     raise SystemExit("FAIL:\n" + "\n".join(problems))

@@ -16,7 +16,7 @@ docs/layout.md "Python modules" is the source of truth: each module is
   are not read) naming an ns-3 path or program: /opt/ns-3, ns3-dev,
   ns3-build-contrib, ./ns3, routing-compare.
 
-    check-python-boundary.py [--layout FILE] [--package DIR]
+    check-python-boundary.py
 
 Prints one line per finding and a summary; exits 1 on any finding.
 """
@@ -131,11 +131,10 @@ def check(layout: Path, package: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--layout", type=Path, default=ROOT / "docs" / "layout.md")
-    ap.add_argument("--package", type=Path, default=ROOT / "python" / PACKAGE)
-    args = ap.parse_args(argv)
-    problems = check(args.layout, args.package)
+    # No path arguments: the repository's own files only (check() takes paths
+    # for the self-test).
+    argparse.ArgumentParser(description=__doc__.split("\n\n")[0]).parse_args(argv)
+    problems = check(ROOT / "docs" / "layout.md", ROOT / "python" / PACKAGE)
     for p in problems:
         print(p)
     print(f"check-python-boundary: {len(problems)} finding(s)")
