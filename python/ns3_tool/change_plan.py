@@ -65,8 +65,11 @@ on `ref` while a campaign is in flight changes its later cells (#148). With
 commit `ref` names then as `campaign/<generation>` in the repository
 (state.json `ref`), and every dispatch of the campaign, re-dispatches
 included, runs at that tag, which such a bump cannot reach; it needs a token
-that may create tags, and stops the dispatch when it may not. Without it
-(the default) every cell is dispatched at `ref` itself. `collect` reads
+that may create tags, and stops the dispatch when it may not. It is not
+retroactive: set on a campaign already in flight, it freezes `ref` as it is
+at the next dispatch, and cells dispatched before stay as they were (collect
+still checks every cell's dependency set). Without it (the default) every
+cell is dispatched at `ref` itself. `collect` reads
 each cell's `##PROV## modules=` (name@commit, the module under test being the
 one at the arm's source_sha), records the first collected cell's dependency
 set in state.json (`deps`) and rejects a cell, of any arm, whose set differs,
@@ -869,11 +872,14 @@ def frozen_ref(plan, repo, state, dry_run):
         print(f"ref {plan['ref']} = {sha[:12]}: the first dispatch tags it {tag}", file=sys.stderr)
         return sha
     try:
-        have = gh(f"repos/{repo}/git/ref/tags/{tag}", "--jq", ".object.sha").strip()
+        obj = json.loads(gh(f"repos/{repo}/git/ref/tags/{tag}"))["object"]
     except RuntimeError as e:
         if "404" not in str(e) and "Not Found" not in str(e):
             raise
-        have = None
+        obj = None
+    have = obj["sha"] if obj else None
+    if obj and obj.get("type") == "tag":  # an annotated tag: compare the commit it targets
+        have = json.loads(gh(f"repos/{repo}/git/tags/{have}"))["object"]["sha"]
     if have is None:
         try:
             gh(

@@ -131,6 +131,7 @@ class FakeGh:
         self.cells = {}  # run id -> (artifact name, results.txt)
         self.heads = {"main": "a" * 40}  # branch -> the commit it names now
         self.tags = {}  # tag -> commit (git refs created through the API)
+        self.annotated = {}  # tag -> (tag object sha, commit): an annotated tag
         self.callers = {}  # ref -> caller text, when it differs from self.caller
 
     def __call__(self, *args, stdin=None, binary=False):
@@ -142,9 +143,15 @@ class FakeGh:
             return self.heads[url.split("/commits/")[1]] + "\n"
         if "/git/ref/tags/" in url:
             tag = url.split("/git/ref/tags/")[1]
+            if tag in self.annotated:  # (tag object, the commit it targets)
+                return json.dumps({"object": {"sha": self.annotated[tag][0], "type": "tag"}})
             if tag not in self.tags:
                 raise RuntimeError(f"gh api {url}: HTTP 404: Not Found")
-            return self.tags[tag] + "\n"
+            return json.dumps({"object": {"sha": self.tags[tag], "type": "commit"}})
+        if "/git/tags/" in url:
+            obj = url.split("/git/tags/")[1]
+            commit = next(c for o, c in self.annotated.values() if o == obj)
+            return json.dumps({"object": {"sha": commit, "type": "commit"}})
         if url.endswith("/git/refs"):
             if getattr(self, "refuse_refs", False):
                 raise RuntimeError(f"gh api -X: HTTP 403: write access not permitted ({url})")
@@ -340,6 +347,16 @@ def _dispatch_freeze_edges():
         fake.tags["campaign/vtest"] = "a" * 40  # the same commit: a lost state.json, resumed
         dispatch(plan_of(d, freeze=True), os.path.join(d, "w3"), fake)
         expect(len(fake.dispatched) == 2, "freeze-same-commit", fake.dispatched)
+        fake = FakeGh()  # an annotated tag whose target is that commit: reused, not refused
+        fake.annotated["campaign/vtest"] = ("e" * 40, "a" * 40)
+        dispatch(plan_of(d, freeze=True), os.path.join(d, "w6"), fake)
+        expect(len(fake.dispatched) == 2 and not fake.tags, "freeze-annotated", fake.dispatched)
+        fake = FakeGh()  # an annotated tag on another commit: refused
+        fake.annotated["campaign/vtest"] = ("e" * 40, "c" * 40)
+        err = dispatch(plan_of(d, freeze=True), os.path.join(d, "w7"), fake)
+        expect(
+            "start a new generation" in err and not fake.dispatched, "freeze-annotated-clash", err
+        )
         fake = FakeGh()
         fake.refuse_refs = True  # a token that may not create tags (a sandboxed proxy)
         err = dispatch(plan_of(d, freeze=True), os.path.join(d, "w5"), fake)
@@ -423,6 +440,34 @@ KEY_MODULES = f"ara@{SHA},swarm-core@{DEP1},routing-bench@{DEP2}"
 
 def keyed():
     return FakeGh(caller=KEY_CALLER, modules=KEY_MODULES)
+
+
+@case("dispatch: with freeze true the caller, and so each cell key, is read at the tag")
+def _dispatch_frozen_caller():
+    camp = cp.campaign_module()
+    bumped = "e" * 40
+    with tempfile.TemporaryDirectory() as d:
+        plan, work = plan_of(d, freeze=True), os.path.join(d, "w")
+        fake = keyed()
+        fake.callers["campaign/vtest"] = KEY_CALLER  # explicit: no fallback to the default caller
+        dispatch(plan, work, fake, cap=2)
+        # A bump merges on main: another swarm-core in the caller at the branch.
+        fake.heads["main"] = "b" * 40
+        fake.callers["main"] = KEY_CALLER.replace(f"@{DEP1}", f"@{bumped}")
+        fake.active = 0
+        dispatch(plan, work, fake, cap=10)
+
+        def key_with(dep, body):
+            i = body["inputs"]
+            mods = [f"swarm-routing/AntHocNet@{SHA}", f"ara=ns3@{SHA}",
+                    f"swarm-core=swarm-routing/ns3-swarm-core@{dep}",
+                    f"routing-bench=swarm-routing/ns3-tools@{DEP2}:ns3/routing-bench"]  # fmt: skip
+            return camp.cell_key(IMAGE, mods, i["harness"], i["args"])
+
+        later = [b for _u, b in fake.dispatched[2:]]
+        expect(later and all(b["inputs"]["key"] == key_with(DEP1, b) for b in later)
+               and all(b["inputs"]["key"] != key_with(bumped, b) for b in later),
+               "freeze-caller-keys", [b["inputs"].get("key") for b in later])  # fmt: skip
 
 
 @case("dispatch: a caller that forwards `key` gets each job's cell key (#155)")
