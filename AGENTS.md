@@ -426,5 +426,6 @@ chat, not the record.
 | Issues migrated from AntHocNet (2026-11-01) | the issues labelled `migrated`, each starting with *Migrated from*; #2 to #8 here came from AntHocNet #764, #771, #772, #773, #791, #294, #431 |
 | The org's invariants, labels, issue shape | [`swarm-routing/.github` CONTRIBUTING.md](https://github.com/swarm-routing/.github/blob/main/CONTRIBUTING.md) |
 | The reference implementation and its history | [`swarm-routing/AntHocNet`](https://github.com/swarm-routing/AntHocNet) (`AGENTS.md`, `CONTEXT.md`, `docs/adr/`) |
+| Decide where a new file or directory goes, or what a path ships as and who consumes it | [`docs/layout.md`](docs/layout.md): every path by simulator and kind, the packages, the published paths never to move, "Where a new file goes"; [ADR-0002](docs/adr/0002-sim-tools-layout-and-packages.md) (proposed), epic #375 |
 | Know which release a piece of work serves, or why something is not planned | [`docs/roadmap.md`](docs/roadmap.md): the ladder v0.1.0 → v0.2.0 → v1.0.0 (contract v1 frozen) → v1.1.0 → v2.0.0 (contract v2), per-release exit criteria, the non-goals; issues carry `release:` labels |
 | Pick up open work | this repo's issues — highest open `priority:P*` first; newest open `handoff` issue for work in flight |
