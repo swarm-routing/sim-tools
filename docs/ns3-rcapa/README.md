@@ -70,6 +70,11 @@ same format. The full procedure is in the register's
    the ticket.
 3. Add its row to the register and to the table above, in the same pull
    request.
+   **Log every investigation step on the ticket as it happens**, with
+   `rcapa.py log` (swarm-routing/.github `tools/rcapa/rcapa.py`; `rcapa.py
+   steps` prints a ticket's logged steps). Each row of the document's
+   Timeline links the ticket comment that recorded it
+   (`https://github.com/swarm-routing/sim-tools/issues/N#issuecomment-ID`).
 4. To report it upstream: a pull request to swarm-routing/ns3-upstream-report
    adds the item to its `tracked.toml` (id, title, RCAPA ticket, the
    reproducer P1 verify runs, the workarounds to remove once it is fixed)
@@ -77,6 +82,25 @@ same format. The full procedure is in the register's
    from the RCAPA ticket. The RCAPA ticket stays open until the bridge
    reports the fix in an ns-3 release and the workaround issues it opens are
    closed.
+
+## The ticket-first check
+
+`tools/checks/check-rcapa-tickets.py` (swarm-routing/.github#952; `make check`
+runs it when a `GITHUB_TOKEN` or `GH_TOKEN` is set, CI's `rcapa-tickets.yml`
+on every pull request) reads the GitHub API, from the pull request's merge
+base, for each `NS3-NNN` or `PROC-NNN` whose RCAPA document, register row or
+`ns3/patches/<ID>/` the change adds or changes. It fails when:
+
+- no issue titled `[rcapa] <ID> ...` exists in this repository;
+- the issue lacks `rcapa` (and `ns3-upstream`, for an `NS3-NNN`);
+- the change **adds** the document or the patch directory and the issue was
+  created after the change's first commit (the ticket comes first);
+- a Timeline row of a document the change **adds** does not link a comment of
+  that ticket.
+
+Documents and patches already on `main` are grandfathered: for them the
+Timeline check only warns. `--offline` lists what would be checked, with no
+API call; with no API the check fails closed.
 
 ## Writing one
 

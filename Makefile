@@ -13,7 +13,7 @@ DOCKERFILE ?= Dockerfile
 BUILD_ARGS ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help build test lint format check clean shell ci headers org-sync-check org-tools dist
+.PHONY: help build test lint format check clean shell ci headers org-sync-check org-tools dist rcapa-tickets
 
 help: ## list the targets
 	@awk 'BEGIN{FS=":.*## "} /^[a-zA-Z0-9_-]+:.*## /{printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -46,7 +46,14 @@ shell: ## an interactive shell in the dev image with this repo at /src
 headers: org-tools ## licence headers (org rule 1)
 	"$(ORG_DIR)/tools/checks/check-headers.sh" --dual python/ --dual tools/ .
 
-check: lint test headers org-sync-check ## everything CI gates on
+# swarm-routing/.github#952: an RCAPA change needs its ticket first. Reads the GitHub API
+# with GITHUB_TOKEN or GH_TOKEN; with neither it says so and skips (CI always has one).
+rcapa-tickets: ## RCAPA documents, register rows and patches have their ticket first (skipped without a token)
+	@if [ -z "$$GITHUB_TOKEN$$GH_TOKEN" ]; then echo "rcapa-tickets: skipped (no GITHUB_TOKEN or GH_TOKEN); CI runs it"; \
+	else git rev-parse -q --verify origin/main >/dev/null || git fetch -q origin main; \
+	  python3 -I tools/checks/check-rcapa-tickets.py --base origin/main; fi
+
+check: lint test headers org-sync-check rcapa-tickets ## everything CI gates on
 
 ci: check ## exactly what CI runs
 
