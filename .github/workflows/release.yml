@@ -58,7 +58,7 @@ jobs:
     # commit of the push, not only its head: a merge queue batches (#943).
     if: "${{ github.event_name != 'push' || contains(toJSON(github.event.commits.*.message), 'chore(release): bump version ') }}"
     permissions: { contents: write, pull-requests: write, id-token: write, attestations: write }
-    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@e4ba96af97d87fdde768f9ef46d9dc4585c6c196 # main@2026-11-25
+    uses: swarm-routing/.github/.github/workflows/reusable-release.yml@4dde61a6dd10f98caf076d93ff8d8d4e32430d61 # main@2026-11-26
     with:
       mode: ${{ inputs.mode }}   # empty on push: release
       increment: ${{ inputs.increment != 'auto' && inputs.increment || '' }}   # '' for auto and on push
@@ -80,7 +80,7 @@ jobs:
     needs: release
     if: ${{ needs.release.outputs.mode == 'release' }}
     permissions: { contents: read, packages: write, id-token: write, attestations: write }
-    uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@e4ba96af97d87fdde768f9ef46d9dc4585c6c196 # main@2026-11-25
+    uses: swarm-routing/.github/.github/workflows/reusable-ns3-image.yml@4dde61a6dd10f98caf076d93ff8d8d4e32430d61 # main@2026-11-26
     with:
       modules: routing-bench=ns3/routing-bench
       image: ns3-tools

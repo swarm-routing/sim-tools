@@ -6,13 +6,13 @@
 |---|---|
 | ID | NS3-005 |
 | RCAPA ticket | [swarm-routing/sim-tools#374](https://github.com/swarm-routing/sim-tools/issues/374): `[rcapa] NS3-005 AODV broadcast route lifetime overflows int64 when an interface comes up after t=0` |
-| Status | open upstream; not yet reported; patch kept here (`ns3/patches/NS3-005/`), not yet applied to the images |
+| Status | open upstream; reported as [nsnam/ns-3-dev#1417](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1417); patch kept here (`ns3/patches/NS3-005/`) and applied in the `ns3-dev:3.49-{debug,sanitized}-patched-5c58dfa` images |
 | Found | 2026-11-25, by the [swarm-routing/sim-tools#361](https://github.com/swarm-routing/sim-tools/pull/361) shepherd (`routing-compare --failures`, a node `start`), in `ns3-dev:latest-sanitized` |
 | Last checked | 2026-11-25: the standalone reproducer run on ns-3.49 (`ns3-dev:latest-sanitized` and `latest-debug`) and on ns-3-dev `master` `d07400ba`; the patch run on both; the source read back to ns-3.7 |
 | ns-3 versions | run: 3.49, ns-3-dev `master` `d07400baf45375afe6311d996ddc498722114f6d` (2026-11-25); read: 3.7 to 3.49 and that `master` (the unchecked add and the maximum-time lifetime are in every one; `aodv-rtable.{cc,h}` are byte-identical from 3.44 to `master`); not affected: 3.6 and older (no AODV module; read) |
 | Modules | `aodv` (`RoutingTableEntry`'s constructor and `SetLifeTime`; the callers in `RoutingProtocol`: `SetIpv4`, `NotifyInterfaceUp`, `NotifyAddAddress`, `NotifyRemoveAddress`); seen through `core` (`Time::operator+`) |
 | Impact on our repositories | any run that brings an AODV interface up after t=0: today only `routing-compare --failures` with a `start` ([swarm-routing/sim-tools#361](https://github.com/swarm-routing/sim-tools/pull/361), opt-in, not merged). On a sanitized build (`ns3-dev:*-sanitized`, CI's sanitized leg) the run aborts; on any other build it runs on undefined behaviour. Runs without interface changes after t=0 are unaffected. DSDV, OLSR and HWMP do not share it (read, below). |
-| Upstream | not yet reported |
+| Upstream | [nsnam/ns-3-dev#1417](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1417), filed 2026-11-26 00:17Z through [swarm-routing/ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report) (`reports/NS3-005.md`) |
 
 AODV gives the routes that must never expire (the loopback route and each
 interface's local broadcast route) the lifetime
@@ -291,7 +291,7 @@ does not fit is not proof that the bug is gone.
 | Action | Where | Status |
 |--------|-------|--------|
 | The fix as a patch to ns-3, applied only to a source with the bug, with its reproducer and test | `ns3/patches/NS3-005/` (this RCAPA's pull request, part of swarm-routing/sim-tools#374) | done (in review) |
-| Apply the patch in the `ns3-dev` images' ns-3 build, so sanitized runs with interface restarts no longer abort | swarm-routing/sim-containers (`docker/`), a later step of swarm-routing/sim-tools#374 | open |
+| Apply the patch in the `ns3-dev` images' ns-3 build, so sanitized runs with interface restarts no longer abort | swarm-routing/sim-containers `ns3-dev:3.49-{debug,sanitized}-patched-5c58dfa` (publish run 45712453689, the patch at sim-tools `1b36c739`); the stock `latest-*` images stay unpatched | done |
 | `routing-compare --failures` restarts run on sanitized builds only with a patched ns-3; its README names NS3-005 | [swarm-routing/sim-tools#361](https://github.com/swarm-routing/sim-tools/pull/361): the routing-bench README ("Scripted failures"); the suite reads the bug's signature at configure time (`ROUTING_BENCH_NS3_005`) and leaves aodv out of its node restart cases on a tree with the bug; `ns3.yml` job `failures-patched` runs every case on `ns3-dev:3.49-sanitized-patched-5c58dfa@sha256:06b122a9…` | done (in review) |
 
 ## Preventive actions
@@ -300,15 +300,16 @@ does not fit is not proof that the bug is gone.
 |--------|-------|--------|
 | CI proves the patch on every pull request: `apply.sh`'s five decisions, the reproducer failing on the stock sanitized tree and passing patched, the four AODV suites, and `already-fixed` on a patched tree | `.github/workflows/ns3.yml` job `ns3-patches`, `ns3/patches/NS3-005/test.sh` | done (in review) |
 | When ns-3 ships a fix, `apply.sh` prints `already-fixed` by itself; the reproducer then confirms the release | `ns3/patches/NS3-005/apply.sh` | done (in review) |
-| The upstream report asks for an AODV test that brings an interface up after t=0 under the sanitizers, the path ns-3's suites never take | swarm-routing/ns3-upstream-report | open (a later step of swarm-routing/sim-tools#374) |
+| The upstream report asks for an AODV test that brings an interface up after t=0 under the sanitizers, the path ns-3's suites never take | swarm-routing/ns3-upstream-report, in [nsnam/ns-3-dev#1417](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1417) | done (reported) |
 
 ## Upstream report
 
-Status: not yet reported. It goes out only through
+Status: reported as [nsnam/ns-3-dev#1417](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1417), posted
+2026-11-26 00:17Z through
 [swarm-routing/ns3-upstream-report](https://github.com/swarm-routing/ns3-upstream-report)
-(`reports/NS3-005.md`), a later step of
+(`reports/NS3-005.md`), part of
 [swarm-routing/sim-tools#374](https://github.com/swarm-routing/sim-tools/issues/374).
-Draft:
+The draft as written here:
 
 > **Title:** aodv: route lifetime overflows int64 when an interface comes up after t=0
 >
@@ -355,6 +356,8 @@ reading; the runs at `d07400ba` and `8a06b457` stand.
 | 2026-11-25 | The [swarm-routing/sim-tools#361](https://github.com/swarm-routing/sim-tools/pull/361) shepherd sees UBSan abort a `--failures` restart in `ns3-dev:latest-sanitized`. |
 | 2026-11-25 | Duplicate search of nsnam/ns-3-dev (issues and merge requests, all states): no existing report; `master` `d65e02b1` still has the bug by source read (see "Upstream report"). |
 | 2026-11-25 | RCAPA ticket [swarm-routing/sim-tools#374](https://github.com/swarm-routing/sim-tools/issues/374) opened; standalone reproducer run on ns-3.49 and ns-3-dev `master` `d07400ba`; source read back to ns-3.7; patch, apply script and test written and run. |
+| 2026-11-26 | swarm-routing/sim-containers publishes `ns3-dev:3.49-{debug,sanitized}-patched-5c58dfa` with the patch (publish run 45712453689). |
+| 2026-11-26 | Reported upstream as [nsnam/ns-3-dev#1417](https://gitlab.com/nsnam/ns-3-dev/-/work_items/1417) (00:17Z), through swarm-routing/ns3-upstream-report. |
 
 ## Links
 
