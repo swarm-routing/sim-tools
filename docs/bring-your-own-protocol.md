@@ -597,6 +597,29 @@ a plan in
 it needs a repository with the org's cell
 workflow, which the local loop above does not.
 
+The cell above is a shortened paper field. For a real comparison, run your
+arm on a network family's cells. The
+[family catalogue](https://github.com/swarm-routing/sim-tools/blob/main/scenarios/README.md)
+covers MANET, FANET and VANET. For each family it gives the routing-compare
+preset, the cells, the preflight verdict each cell must give, and the
+family's anchors, with a source for every value. Each family also has a
+"configure it with ns-3" page:
+[MANET](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/manet.md),
+[FANET](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/fanet.md),
+[VANET](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/vanet.md).
+
+The catalogue came after v1.1.4, so these links point at `main`. To use it:
+- check out this repository;
+- install a release after v1.1.4, or `pip install ./python` from the
+  checkout: v1.1.4's `ns3-scenario-check` and `ns3-tool sweep` have no
+  `--family`;
+- pass the checkout's `scenarios/` with `--catalogue DIR`:
+
+```bash
+ns3-scenario-check preflight --family fanet --catalogue DIR
+ns3-tool sweep NS3DIR --family fanet --catalogue DIR --protocols ARM,aodv,olsr,dsdv --runs 20
+```
+
 ## 6. The three gates
 
 An arm's numbers count in a comparison only after three gates (org rule 6,
@@ -751,19 +774,26 @@ a step, but each can mislead:
 
 - **The drop book is meaningless for a flooding arm** (step 5): every
   broadcast reception counts as a hop, so `chan` goes to about -7800%.
+  After v1.1.4, `ns3-tool diagnose` prints `n/a` and a warning for such an
+  arm (#351; [markers.md](markers.md) "Reading an arm that is not unicast
+  routing").
 - **NRL is 0 for an arm that sends no control packets**: a flood's cost
-  shows in `##AIR##`, not in NRL (step 5).
+  shows in `##AIR##`, not in NRL (step 5; [markers.md](markers.md) says so
+  after v1.1.4).
 - **Concatenated seed blocks:** `ns3-tool compare --all`'s top row per arm
   is the last block's summary table; read the `95% CI n=20` line. `compare`
   also echoes every `##PERF##` line.
 - **The summary table is titled "AntHocNet protocol comparison"**, whatever
-  arms ran.
+  arms ran. It stays so for now: committed cells carry it, and AntHocNet's
+  callers are checked before it changes (#351).
 - **`routing-compare --PrintHelp` cites AntHocNet-internal items**: bare
   issue numbers (`#58`, `#296`, `#639` ...) that are AntHocNet's, and paths
   such as `docs/benchmarks/scenarios/fanet.md` that exist in AntHocNet, not
-  here or in the tarball.
+  here or in the tarball. Gone after v1.1.4 (#351).
 - **The scaffold's comments and README name `swarm-routing/ns3-tools`**, this
-  repository's old name; it is `swarm-routing/sim-tools` now. Its README's
+  repository's old name; it is `swarm-routing/sim-tools` now (the scaffold
+  says so after v1.1.4, #351, and its `TODO` lines read as placeholder
+  notes, so step 3's patch applies to v1.1.4's skeleton only). Its README's
   `docker run` example also mounts a checkout of this repository, which the
   `ns3-build-contrib` call of step 4 does not need.
 - **The delivery-smoke scripts are not shipped** (gate 2):

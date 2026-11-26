@@ -21,6 +21,15 @@ protocol is special-cased here (AGENTS.md rule 12). The `##DIAG##` line is
 contract v2's (#79); until the harness prints it, the drop book is the
 diagnosis. A field that is present but not a number fails the read, as the
 readers do (#58).
+
+The drop book assumes unicast forwarding: each data hop is one transmission
+received at most once, and `chan` is the residual hopTx - hopRx minus the
+other causes. For an arm that forwards data by broadcast (a flood), every
+reception counts as a hop received, so hopRx exceeds hopTx, `chan` goes far
+negative and `sum` with it (#351). When that shows (the `##DROPID##` mean
+hopRx above the mean hopTx, or a cause below -100 %),
+the arm's `chan` and `sum` read `n/a` and a warning line under the row gives
+the raw values; PDR and the other columns are printed as read.
 """
 
 import argparse
@@ -77,6 +86,22 @@ def mean(xs):
     return sum(xs) / len(xs)
 
 
+BROKEN = ("chan", "sum")  # the columns a broadcast-forwarding arm makes meaningless
+
+
+def not_unicast(d, i):
+    """Why an arm's drop book breaks the unicast assumption, or None.
+
+    d is the arm's `# drops` values, i its `##DROPID##` values (or None). A
+    unicast hop is received at most once, so hopRx never exceeds hopTx, and no
+    cause can book less than -100 % of the offered packets.
+    """
+    if i and "hopRx" in i and "hopTx" in i and mean(i["hopRx"]) > mean(i["hopTx"]):
+        return f"hopRx {mean(i['hopRx']):.4g} > hopTx {mean(i['hopTx']):.4g}"
+    low = [c for c in CAUSES[1:6] if c in d and mean(d[c]) < -100]
+    return ", ".join(f"{c} {mean(d[c]):.2f} %" for c in low) or None
+
+
 def report(text, where="<text>", proto=None):
     """The diagnosis as lines of text."""
     drops, ids, own = parse(text, where)
@@ -89,10 +114,25 @@ def report(text, where="<text>", proto=None):
         if not d:
             continue
         n = max(len(v) for v in d.values())
+        why = not_unicast(d, ids.get(arm))
         out.append(
             f"{arm:<14}{n:>6}"
-            + "".join(f"{mean(d[c]):>8.2f}" if c in d else f"{'-':>8}" for c in CAUSES)
+            + "".join(
+                f"{'n/a':>8}"
+                if why and c in BROKEN
+                else f"{mean(d[c]):>8.2f}"
+                if c in d
+                else f"{'-':>8}"
+                for c in CAUSES
+            )
         )
+        if why:
+            raw = "  ".join(f"{c}={mean(d[c]):.2f}" for c in BROKEN if c in d)
+            out.append(
+                f"{'':<20}warning: {arm} breaks the drop book's unicast assumption ({why}): "
+                f"broadcast receptions count as hops, so chan and sum are not loss causes "
+                f"(raw {raw}); read PDR, and ##AIR## for its cost"
+            )
         if arm in own:
             out.append(f"{'':<20}{own[arm]}")
     for arm in arms:

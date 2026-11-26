@@ -92,6 +92,29 @@ After every arm and seed: `##MATCH##` and `##COMMON##` (per seed, across arms),
 the summary table and `# stddev` lines. Before the runs: `##CONFIG##`
 (`key=value`).
 
+### Reading an arm that is not unicast routing
+
+Two readings assume an arm that forwards data hop by hop over unicast and
+spends control packets to find its routes (#351):
+
+- **NRL** (`##RUN##` `nrl`, and `nrl_bytes`) counts routing *control*
+  packets (bytes) per delivered data packet (byte). An arm that sends no
+  control traffic, a flood for instance, reads 0 by definition, however
+  many data copies it sends. Its cost is the channel occupancy: `##AIR##`
+  `<seed> <arm> txS rxS ccaS busyPct`, the last field the percentage of
+  node-time the medium was busy, compared between arms by seed.
+- **The drop book** (`##DROPID##` and the `# drops` line: pdr + route +
+  queue + mac + chan + ttl = 100 % of offered packets) counts one data
+  transmission received at most once per hop; `chan` is the residual of
+  `hopTx - hopRx` after the other causes. Under broadcast forwarding every
+  reception counts as a hop received, so `hopRx` exceeds `hopTx` and `chan`
+  and the sum go far negative (about -7800 % for a toy flood). The bytes
+  stay as they are (contract v1); `ns3-tool diagnose` prints `n/a` for that
+  arm's `chan` and `sum` and a warning line with the raw values whenever
+  `hopRx` exceeds `hopTx` or a cause is below -100 %. PDR still reads as
+  for any arm; the other causes count events on every copy, so read them
+  with care.
+
 ## `##PERF##`: what one run cost
 
 ```

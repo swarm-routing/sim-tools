@@ -33,15 +33,22 @@ jobs:
         with:
           egress-policy: audit
       # a docs-only change skips the steps below; the check still reports (swarm-routing/.github#581)
-      - uses: swarm-routing/.github/.github/actions/changes@734a61a853569711139d52f5f5c7aa2e8e5bd0e1 # main@2026-11-24
+      - uses: swarm-routing/.github/.github/actions/changes@e4ba96af97d87fdde768f9ef46d9dc4585c6c196 # main@2026-11-25
         id: changes
         timeout-minutes: 2
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0  # check-published-paths.py diffs against origin/main from the merge base
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
+      # sim-tools#376, ADR-0002: a published path is never moved or deleted
+      # without a new ADR. No docs-only skip: the table and the paths are docs.
+      - name: Published paths are not moved or deleted
+        run: |
+          python3 -I tools/checks/tests/test_check_published_paths.py
+          python3 -I tools/checks/check-published-paths.py --base origin/main
       - name: Self-tests (fixtures)
         if: steps.changes.outputs.docs-only != 'true'
         run: for t in python/tests/test_*.py; do echo "== $t"; python3 "$t"; done
@@ -52,6 +59,16 @@ jobs:
         run: |
           python3 -I tools/checks/check-refs.py --self-test
           python3 -I tools/checks/check-refs.py docs/ns3-bugs.md docs/ns3-rcapa/
+      # ns3-tools#55: the network-family catalogue is complete, sourced and
+      # agrees with scenario_check and its pages.
+      - name: The family catalogue (scenarios/)
+        # reads docs/families/: runs on a docs-only change too
+        run: python3 -I tools/checks/check-scenarios.py
+      # #377: the agnostic modules of python/ns3_tool import no ns-3-bound one
+      # and name no ns-3 path or program (docs/layout.md "Python modules").
+      - name: The simulator-agnostic / ns-3 boundary (python/ns3_tool)
+        # reads docs/layout.md: runs on a docs-only change too
+        run: python3 -I tools/checks/check-python-boundary.py
       - name: Install the package; console scripts run
         if: steps.changes.outputs.docs-only != 'true'
         timeout-minutes: 5  # an install, as the PyYAML step (seconds in a green run)
@@ -64,6 +81,8 @@ jobs:
           ns3-bench-parse "$GITHUB_WORKSPACE"/python/tests/fixtures/cells/fanet-main-6arm.txt | grep -q '95% CI'
           ns3-scenario-check results "$GITHUB_WORKSPACE"/python/tests/fixtures/cells/sat-base-app517.txt \
             --anchors "$GITHUB_WORKSPACE"/python/tests/fixtures/anchors.yml | grep -q '^verdict: '
+          ns3-scenario-check preflight --family fanet --catalogue "$GITHUB_WORKSPACE"/scenarios \
+            | grep -qx 'verdict: WARN (0 fail, 2 warn)'
           ns3-campaign validate "$GITHUB_WORKSPACE"/campaigns/anthocnet-aodv-smoke.toml
           ns3-tool --help | grep -q '  scaffold '
           ns3-tool compare "$GITHUB_WORKSPACE"/python/tests/fixtures/cells/fanet-main-6arm.txt | grep -q '95% CI'
@@ -79,7 +98,7 @@ jobs:
         with:
           egress-policy: audit
       # a docs-only change skips the steps below; the check still reports (swarm-routing/.github#581)
-      - uses: swarm-routing/.github/.github/actions/changes@734a61a853569711139d52f5f5c7aa2e8e5bd0e1 # main@2026-11-24
+      - uses: swarm-routing/.github/.github/actions/changes@e4ba96af97d87fdde768f9ef46d9dc4585c6c196 # main@2026-11-25
         id: changes
         timeout-minutes: 2
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

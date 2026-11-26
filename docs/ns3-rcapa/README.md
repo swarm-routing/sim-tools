@@ -17,6 +17,8 @@ ns3-tools' **own** code is an `NST-NNN` RCAPA in
 | [`ns3-rcapa-aodv-icmp-livelock.md`](ns3-rcapa-aodv-icmp-livelock.md) | NS3-001: ns-3.49 AODV livelocks in a zero-time ICMP "net unreachable" storm | [swarm-routing/ns3-tools#238](https://github.com/swarm-routing/ns3-tools/issues/238) |
 | [`ns3-rcapa-socket-map-heap-order.md`](ns3-rcapa-socket-map-heap-order.md) | NS3-002: AODV and DSDV order per-interface sockets by heap address | [swarm-routing/ns3-tools#239](https://github.com/swarm-routing/ns3-tools/issues/239) |
 | [`ns3-rcapa-dsdv-null-route.md`](ns3-rcapa-dsdv-null-route.md) | NS3-003: DSDV sends on a route with a null output device | [swarm-routing/ns3-tools#240](https://github.com/swarm-routing/ns3-tools/issues/240) |
+| [`ns3-rcapa-aodv-hello-restart.md`](ns3-rcapa-aodv-hello-restart.md) | NS3-004: AODV never restarts its hello timer when an interface comes back up | [swarm-routing/sim-tools#362](https://github.com/swarm-routing/sim-tools/issues/362) |
+| [`ns3-rcapa-aodv-lifetime-overflow.md`](ns3-rcapa-aodv-lifetime-overflow.md) | NS3-005: AODV route lifetime overflows int64 when an interface comes up after t=0 | [swarm-routing/sim-tools#374](https://github.com/swarm-routing/sim-tools/issues/374) |
 | [`ns3-rcapa-upstream-report-tracking.md`](ns3-rcapa-upstream-report-tracking.md) | PROC-001 (process, ours): upstream reports have no owner after filing | [swarm-routing/ns3-tools#247](https://github.com/swarm-routing/ns3-tools/issues/247) |
 
 ## What an RCAPA answers

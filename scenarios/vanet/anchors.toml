@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The VANET family's anchors: analytic (geometry decides the answer; the Broch
+# floor is random waypoint only, and no published value exists for this street
+# grid). Both shrink the preset to one 280 x 280 m block with 20 vehicles.
+# Floors and cells adapted from swarm-routing/AntHocNet ns3/tools/anchors.yml
+# and tools/checks/check-anchors.sh (GPL-2.0-only, AntHocNet #488); the floor
+# keys are that file's. Format: scenarios/README.md.
+schema = 1
+family = "vanet"
+
+[anchors.vanet-single-hop]
+kind = "analytic"
+flags = { scenario = "vanet", nNodes = 20, area = 280, blocksX = 1, blocksY = 1, streetWidth = 279, flows = 4, time = 120, runs = 2 }
+arms = ["aodv", "oracle"]
+expected = "PDR about 100 % and the oracle's mean hop count about 1.00"
+source = "derivation: street width 279 m leaves a 1 m building; the 396 m block diagonal is inside the 423.3 m two-ray decode radius and no line of sight is cut, so every flow is one hop"
+measured = "AODV 99.5 %, oracle 99.9 % at hopsMean 1.00 (2 runs, 120 s; AntHocNet ns3/tools/anchors.yml)"
+floors = { vanet_single_hop_pdr_min = 99.0, vanet_single_hop_oracle_hops_max = 1.05 }
+margin = "99.0 mirrors the planar single-hop floor"
+
+[anchors.vanet-building]
+kind = "analytic"
+flags = { scenario = "vanet", nNodes = 20, area = 280, blocksX = 1, blocksY = 1, streetWidth = 100, flows = 4, time = 120, runs = 2 }
+arms = ["aodv", "oracle"]
+expected = "oracle hopsMean above 1.2: the buildings are honoured end to end"
+source = "derivation: street width 100 m leaves a 180 x 180 m building; vehicles on opposite streets lose line of sight and relay round a corner, while a channel that ignored the building reads the single-hop 1.00"
+measured = "AODV 80.4 %, oracle 99.6 % at hopsMean 1.36 (2 runs, 120 s; AntHocNet ns3/tools/anchors.yml)"
+floors = { vanet_building_pdr_min = 70.0, vanet_building_oracle_hops_min = 1.2 }
+margin = "the hop floor is the anchor's point; the PDR floor only catches a broken relay path, so it sits ~10 pp under AODV"

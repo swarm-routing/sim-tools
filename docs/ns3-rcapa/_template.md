@@ -82,6 +82,11 @@ classDiagram
 |--------|-------|--------|
 | … | swarm-routing/{repo}#N | done / open |
 
+<!-- A diff to ns-3's own source goes in ns3/patches/NS3-NNN/ (the patch, its
+     self-detecting apply.sh, the reproducer, test.sh: ns3/patches/README.md);
+     run-time code avoiding the bug stays in the module that needs it. Name
+     the directory here and in the register's "Workaround" column. -->
+
 ## Preventive actions
 
 | Action | Where | Status |
