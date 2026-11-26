@@ -53,9 +53,15 @@ ID_RE = re.compile(r"(?:NS3|PROC)-\d{3,}")
 HEADING_ID = re.compile(r"^#\s+((?:NS3|PROC)-\d{3,})\b")
 ROW_ID = re.compile(r"^\|\s*((?:NS3|PROC)-\d{3,})\s*\|")
 # sim-tools was ns3-tools until its rename: both spellings link the same issues
-COMMENT_LINK = re.compile(
-    r"https://github\.com/swarm-routing/(?:sim|ns3)-tools/issues/(\d+)#issuecomment-(\d+)"
-)
+RENAMED = {DEFAULT_REPO: "swarm-routing/ns3-tools"}
+
+
+def comment_link(repo: str) -> re.Pattern[str]:
+    """The link to a comment of an issue of `repo` (and of its former name)."""
+    names = "|".join(re.escape(n) for n in (repo, RENAMED.get(repo)) if n)
+    return re.compile(rf"https://github\.com/(?:{names})/issues/(\d+)#issuecomment-(\d+)")
+
+
 API = "https://api.github.com"
 
 Api = Callable[[str], object]  # path (with query) -> parsed JSON; None on 404
@@ -221,7 +227,7 @@ def check(
 
 def bad_timeline_row(api: Api, repo: str, number: int, row: str) -> str | None:
     """Why a Timeline row does not link a comment of ticket `number`, or None."""
-    for m in COMMENT_LINK.finditer(row):
+    for m in comment_link(repo).finditer(row):
         if int(m.group(1)) != number:
             continue
         comment = api(f"/repos/{repo}/issues/comments/{m.group(2)}")

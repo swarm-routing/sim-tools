@@ -164,6 +164,17 @@ r = scenario({DOC: doc("NS3-009", [old_link])})
 code, out, _ = verdict(r, good)
 expect("ns3-tools link accepted", code == 0, out)
 
+# 8b. --repo selects the link's repository: links to it pass, the default's links do not
+other = "example/other"
+other_row = good_rows[0].replace("swarm-routing/sim-tools", other)
+r = scenario({DOC: doc("NS3-009", [other_row])})
+fake = Fake([issue(7, "NS3-009")], {100: comment(7)})
+code, out, _ = verdict(r, fake, argv=["--repo", other])
+expect("--repo link accepted", code == 0, out)
+r = scenario({DOC: doc("NS3-009", good_rows)})
+code, out, _ = verdict(r, fake, argv=["--repo", other])
+expect("--repo rejects the default repository's link", code == 1, out)
+
 # 9. grandfathered: a pre-existing doc changed. Late ticket and bare timeline rows only warn,
 #    but a missing ticket still fails.
 base = {OLD_DOC: doc("NS3-004", ["old row"])}
