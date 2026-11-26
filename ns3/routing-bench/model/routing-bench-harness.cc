@@ -307,6 +307,14 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
                  "per line ('#' comments); replaces the generated "
                  "i -> n-1-i pairing and --flows",
                  flowsFile);
+    std::string failuresFile;
+    cmd.AddValue("failures",
+                 "sim-tools#128: scripted failures, one '<time> <node> start|shutdown|crash' "
+                 "or '<time> <a>-<b> down|up' per line ('#' comments), applied to every arm "
+                 "at the same simulated time: a node op takes its IPv4 interfaces down or up "
+                 "and cuts or restores its links on the channel, a link op cuts or restores "
+                 "one pair; the file's path and sha256 go on ##CONFIG##",
+                 failuresFile);
     cmd.AddValue("dumpTrace",
                  "Write the first run's node movement to this file "
                  "as an ns-2 trace (2-D fields only)",
@@ -769,6 +777,15 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
                         "--flowsFile='" << flowsFile << "' lists no flows (#639)");
         P.nFlows = static_cast<uint32_t>(P.flowList.size());
     }
+    // ns3-tools#128: the failure schedule, checked against the node count
+    // (after --traceFile set it) and the run window before anything runs.
+    std::string failuresSha256;
+    if (!failuresFile.empty()) {
+        bench::FailureSchedule fs = bench::ReadFailureSchedule(failuresFile, P.nNodes, P.simTime);
+        P.failuresFile = failuresFile;
+        P.failures = std::move(fs.events);
+        failuresSha256 = fs.sha256;
+    }
 
     // 1 ms delay bins for the 99th-percentile computation.
     Config::SetDefault("ns3::FlowMonitor::DelayBinWidth", DoubleValue(0.001));
@@ -882,7 +899,13 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
               << " offTime=" << P.offTime << " rateManager=" << P.rateManager;
     // #708: named only off the default, so 802.11b rows stay byte-identical.
     if (P.standard != "80211b") std::cout << " standard=" << P.standard;
-    std::cout << " protocols=" << protocols << " isolateArms=" << isolateArms << '\n';
+    std::cout << " protocols=" << protocols << " isolateArms=" << isolateArms;
+    // ns3-tools#128: appended, and only with --failures, so every other row
+    // stays byte-identical.
+    if (!P.failuresFile.empty()) {
+        std::cout << " failures=" << P.failuresFile << " failuresSha256=" << failuresSha256;
+    }
+    std::cout << '\n';
     // Module-level ##CONFIG## lines (AntHocNet's attributes at their effective
     // values), then those of each listed arm (the oracle's recompute cadence
     // off its default).

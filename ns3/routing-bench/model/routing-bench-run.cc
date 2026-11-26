@@ -2261,6 +2261,15 @@ Result RunOne(const std::string& proto, const Params& P, uint32_t seed) {
         Simulator::Schedule(Seconds(P.seriesEvery), &SampleSeries, P.seriesEvery, P.simTime);
     }
 
+    // ns3-tools#128: the scripted failures, at the same point of every arm's
+    // run, so each event lands at the same simulated instant in the same
+    // order (failure-schedule.h). Nothing at all without --failures.
+    if (!P.failuresFile.empty()) {
+        std::vector<Ipv4Address> addrs;
+        for (uint32_t i = 0; i < ifs.GetN(); ++i) addrs.push_back(ifs.GetAddress(i));
+        bench::InstallFailures(P.failures, nodes, wifiChannel, addrs);
+    }
+
     Simulator::Stop(Seconds(P.simTime));
     // NS3-001: fail fast, rather than at the job's timeout, if simulated time
     // stops advancing. Installed last, so it sees exactly the run's events;

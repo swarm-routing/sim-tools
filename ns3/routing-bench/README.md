@@ -26,13 +26,14 @@ it depends on none of them.
 | `model/urban-obstacle-loss-model.h/.cc` | the urban building-shadowing channel (#488, #580), Sommer et al.'s obstacle model |
 | `model/source-refusal-counter.h/.cc` | the #510 fallback that counts the sends OLSR refuses at the source |
 | `model/livelock-watch.h/.cc` | the livelock watch (`--livelockEvents`, NS3-001): a `Scheduler` decorator that stops a run once too many events have run at one simulated instant |
+| `model/failure-schedule.h/.cc` | scripted node and link failures (`--failures`, ns3-tools#128): the schedule's reader and checks, the channel's `FailureLossModel`, and the events applied to a run |
 | `model/icmp-error-guard-routing.h/.cc` | the ICMP no-route guard (NS3-001): a decorator around any `Ipv4RoutingProtocol` that applies nsnam/ns-3-dev!3101's suppression rules |
 | `helper/icmp-error-guard-helper.h/.cc` | `IcmpErrorGuardHelper`: wraps whatever another `Ipv4RoutingHelper` creates in the guard, and sums its counters |
 | `helper/stock-arms.h/.cc` | `RegisterStockArms()`: `aodv` (behind the ICMP no-route guard), `olsr`, `dsdv` and `hwmp` (with its 802.11s devices) |
 | `examples/routing-compare.cc` | the program |
 | `examples/anthocnet-compare.cc` | the same program under its original name (ADR-0027 §4), kept at least through v3.x |
 | `examples/CMakeLists.txt` | finds the arm modules installed beside it and generates `arms-generated.cc` (#768) |
-| `test/routing-bench-test-suite.cc` | registry rules, the stock arms, that every stock arm's rows are the same alone and after other arms and a reshaped heap, the ICMP no-route guard (nsnam/ns-3-dev!3101's test; a partitioned AODV network that livelocks on ns-3.49 unguarded and runs guarded), that the field a seed draws does not follow the devices' stream count (swarm-routing/AntHocNet#1222), and the livelock watch (a zero-time storm fails fast, isolated and not; the stock arms' output is byte-identical with it on and off) (`./test.py -s routing-bench`) |
+| `test/routing-bench-test-suite.cc` | registry rules, the stock arms, that every stock arm's rows are the same alone and after other arms and a reshaped heap, the ICMP no-route guard (nsnam/ns-3-dev!3101's test; a partitioned AODV network that livelocks on ns-3.49 unguarded and runs guarded), that the field a seed draws does not follow the devices' stream count (swarm-routing/AntHocNet#1222), and the livelock watch (a zero-time storm fails fast, isolated and not; the stock arms' output is byte-identical with it on and off), and `--failures` (on a five-node chain, a relay shutdown, a relay crash and a link down each stop delivery for aodv, olsr and dsdv, which recovers after the restart; the same schedule gives the same bytes; an empty schedule changes only its `##CONFIG##` keys; a bad file is refused with its line) (`./test.py -s routing-bench`) |
 
 The other arms live in their own modules, each in one
 `helper/<module>-bench-arms.cc`: `anthocnet`, `aomdv`, `gpsr` (`gpsr`, `gpcr`,
@@ -147,6 +148,91 @@ canary's shape) stops at 4.89 s of simulated time, seed 1, after 46 s of wall ti
 debug build (1000000 ICMP-storm events; the storm costs about 45 µs per event
 there), where it used to run until the job's timeout; the guarded
 `aodv` arm runs the same three seeds to the end without tripping it.
+
+## Scripted failures (`--failures`)
+
+`--failures=<file>` (ns3-tools#128) fails nodes and links at given simulated
+times. Every arm sees the same failure at the same time, on stock ns-3 only:
+the harness names no arm for it, and `LIBRARIES_TO_LINK` stays stock (the
+maintainer decision of 2026-11-24 on #128). The file uses
+swarm-routing/ns3-swarm-core#43's `<time> <node> <op>` lines, plus link lines
+whose target is `a-b`:
+
+```
+# '#' starts a comment; blank lines are skipped
+40   2    shutdown     # node ops: start | shutdown | crash
+60   2    start
+40   1-2  down         # link ops: down | up (both directions; 1-2 = 2-1)
+80   1-2  up
+```
+
+| op | what happens, for every arm |
+|---|---|
+| link `down` / `up` | the pair is cut on the channel, or restored: `FailureLossModel`, appended to the tail of the run's `YansWifiChannel` loss chain, returns -1000 dBm between the two nodes, as `RangePropagationLossModel` does beyond its range. Neither node decodes or carrier-senses the other; everything else is unchanged |
+| `shutdown` | every link of the node is cut on the channel, and its non-loopback IPv4 interfaces go down (`Ipv4::SetDown`, so the routing protocol gets `NotifyInterfaceDown`, ns-3's own path: stock AODV and DSDV close their sockets and clear their tables) |
+| `crash` | a `shutdown` that also removes the node's dynamic ARP entries (neither permanent nor auto-generated) and the packets pending on them |
+| `start` | the channel cut is lifted, and the interfaces the `shutdown` or `crash` took down come up (`Ipv4::SetUp`, `NotifyInterfaceUp`) |
+
+Why the channel. A link has to fail between two nodes that stay up and in
+range, which a device or an interface toggle cannot do. The wifi PHY's
+`PostReceptionErrorModel` sees only the MPDU's payload, without the MAC header
+that names the transmitter. Cutting the node's links too is what makes a
+`shutdown` the same for an arm that forwards below IP: `hwmp`'s 802.11s mesh
+points relay at layer 2 whatever IP says.
+
+What it does not do. A protocol that keeps state across an interface down
+keeps it across a `crash`. Stock OLSR's `NotifyInterfaceDown` is empty, so its
+tables outlive the crash and only time out. Stock AODV does not restart its
+hello timer in `NotifyInterfaceUp`, so a restarted AODV node finds routes by
+RREQ but sends no hellos (NS3-004,
+[swarm-routing/sim-tools#362](https://github.com/swarm-routing/sim-tools/issues/362);
+[`docs/ns3-bugs.md`](../../docs/ns3-bugs.md)). Wiping a protocol's own state needs its lifecycle:
+ns3-tools#150, on swarm-core's `SwarmLifecycleHelper`.
+
+AODV restarts need a patched ns-3 (NS3-005,
+[swarm-routing/sim-tools#374](https://github.com/swarm-routing/sim-tools/issues/374)).
+Stock AODV gives its broadcast route the lifetime
+`Simulator::GetMaximumSimulationTime()` and adds `Simulator::Now()` to it, so
+the `start` of an AODV node after t=0 overflows `int64`. A sanitized build
+aborts the run; any other build runs on through undefined behaviour. Run AODV
+`start`s on an ns-3 with [`ns3/patches/NS3-005/`](../patches/NS3-005/README.md)
+applied (`ghcr.io/swarm-routing/ns3-dev:*-patched-*`). Link `down`/`up` does not
+touch AODV's interfaces and is not affected, and neither are olsr, dsdv or hwmp.
+The suite reads the bug's signature in the ns-3 source at configure time
+(`ROUTING_BENCH_NS3_005`, as `apply.sh` decides). Where the bug is there, it
+leaves aodv out of its node `shutdown`/`crash` cases and says so. CI runs every
+case for all three arms on the patched sanitized image, pinned by digest
+(`ns3.yml`, job `failures-patched`).
+
+Rules, checked before any run (each refusal names `<file>:<line>`):
+
+- `time` is in simulated seconds, in `[0, --time)`, as `--flowsFile`'s start.
+- Ids are in `[0, nNodes)`, with `nNodes` read after `--traceFile` sets it, and
+  a link joins two different nodes.
+- A line holds exactly three fields.
+- Every node and link starts up. Events run in time order, and events at one
+  time run in file order. A `shutdown` or `crash` needs the node up and a
+  `start` needs it down; a link's `down` needs it up and its `up` needs it down.
+- A file holds at most 10000 events (`bench::kMaxFailureEvents`, golden rule 7).
+
+Determinism. The schedule draws no random number. Its state is a vector per
+node and an ordered set of links, used for lookups only. Each run schedules
+the events at the same point, just before `Simulator::Stop`, so they fall at
+the same instants in the same order for every arm. With `--isolateArms`, each
+worker reads the same file again. The same seed and the same file give the
+same bytes.
+
+Without `--failures` nothing is installed, and the output is byte-identical
+to the harness before the option. With it, the first `##CONFIG##` line ends
+in ` failures=<path> failuresSha256=<sha256 of the file>`
+([`docs/markers.md`](../../docs/markers.md)). An empty schedule still installs
+the pass-through loss model, and the suite checks that it changes no other
+byte. To see a failure in time, add `--diag --seriesEvery=5`: each flow's
+cumulative deliveries come out every 5 s as `# series` lines.
+
+A harness with its own `main` gets the same by calling
+`bench::ReadFailureSchedule` once and `bench::InstallFailures` in each run,
+after the addresses are assigned.
 
 ## The same field on every ns-3 release (stream layout)
 

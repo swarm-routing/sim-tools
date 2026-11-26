@@ -12,6 +12,7 @@
  * ns3::bench::RunHarness and the arm registry (routing-bench-arm.h).
  */
 
+#include "failure-schedule.h"
 #include "livelock-watch.h"
 #include "routing-bench-arm.h"
 
@@ -105,6 +106,10 @@ struct Params {
     // NS3-001: --livelockEvents, events at one simulated instant that fail
     // the run (livelock-watch.h); 0 = off.
     uint64_t livelockEvents = bench::kDefaultLivelockEvents;
+    // ns3-tools#128: --failures, the scripted node and link failures
+    // (failure-schedule.h); an empty path = none, and nothing is installed.
+    std::string failuresFile;
+    std::vector<bench::FailureEvent> failures;
 };
 
 struct Result {
