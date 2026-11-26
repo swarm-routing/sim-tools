@@ -244,6 +244,48 @@ jobs:
           runner=$(find build/utils -name 'ns3.*-test-runner-*' -type f | head -1)
           for _ in 1 2 3; do "$runner" --suite=routing-bench; done
 
+  failures-patched:
+    needs: changes
+    if: ${{ !cancelled() }}
+    # routing-bench's suite on ns-3.49 sanitized with NS3-005's patch
+    # (ns3/patches/NS3-005/, #374), built by swarm-routing/sim-containers at
+    # sim-tools 1b36c739 and pinned by digest. On the stock images (the module
+    # job) the suite leaves aodv out of --failures' node restart cases, which
+    # overflow stock AODV's route lifetime (NS3-005); here it runs every case
+    # for all three arms. Retire it with the NS3-005 patch, once a stock image
+    # carries the fix (then the module job runs them).
+    name: routing-bench suite on ns-3 patched for NS3-005 (sanitized)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # no image on a docs-only change: the steps skip on the bare runner
+    container:
+      image: ${{ needs.changes.outputs.docs-only != 'true' && 'ghcr.io/swarm-routing/ns3-dev:3.49-sanitized-patched-5c58dfa@sha256:06b122a9405978d03276fbe9f210edda403374c02b879cdbebdd831ecb6672af' || '' }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    env:
+      # as the module job's sanitized leg (reusable-ns3-ci.yml)
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1:strict_string_checks=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    # No Harden-Runner here (swarm-routing/.github#164): a job that runs entirely
+    # in a container cannot take it on a GitHub-hosted runner.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.changes.outputs.docs-only != 'true'
+        with:
+          persist-credentials: false
+      - name: "The image's ns-3 has NS3-005's patch"
+        if: needs.changes.outputs.docs-only != 'true'
+        timeout-minutes: 2
+        run: |
+          out=$(bash ns3/patches/NS3-005/apply.sh --dry-run /opt/ns-3)
+          echo "$out"
+          grep -q '^NS3-005: already-fixed: ' <<<"$out"
+      - name: Build routing-bench (strict warnings) and run its suite, aodv restarts included
+        if: needs.changes.outputs.docs-only != 'true'
+        timeout-minutes: 45
+        run: ns3-build-contrib --strict-warnings --test "routing-bench=$GITHUB_WORKSPACE/ns3/routing-bench"
+
   ns3-patches:
     needs: changes
     if: ${{ !cancelled() }}

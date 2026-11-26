@@ -292,7 +292,7 @@ does not fit is not proof that the bug is gone.
 |--------|-------|--------|
 | The fix as a patch to ns-3, applied only to a source with the bug, with its reproducer and test | `ns3/patches/NS3-005/` (this RCAPA's pull request, part of swarm-routing/sim-tools#374) | done (in review) |
 | Apply the patch in the `ns3-dev` images' ns-3 build, so sanitized runs with interface restarts no longer abort | swarm-routing/sim-containers (`docker/`), a later step of swarm-routing/sim-tools#374 | open |
-| `routing-compare --failures` restarts run on sanitized builds only with a patched ns-3; its README names NS3-005 | [swarm-routing/sim-tools#361](https://github.com/swarm-routing/sim-tools/pull/361) (open; not changed here) | open |
+| `routing-compare --failures` restarts run on sanitized builds only with a patched ns-3; its README names NS3-005 | [swarm-routing/sim-tools#361](https://github.com/swarm-routing/sim-tools/pull/361): the routing-bench README ("Scripted failures"); the suite reads the bug's signature at configure time (`ROUTING_BENCH_NS3_005`) and leaves aodv out of its node restart cases on a tree with the bug; `ns3.yml` job `failures-patched` runs every case on `ns3-dev:3.49-sanitized-patched-5c58dfa@sha256:06b122a9…` | done (in review) |
 
 ## Preventive actions
 

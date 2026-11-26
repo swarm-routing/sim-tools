@@ -189,6 +189,21 @@ RREQ but sends no hellos (NS3-004,
 [`docs/ns3-bugs.md`](../../docs/ns3-bugs.md)). Wiping a protocol's own state needs its lifecycle:
 ns3-tools#150, on swarm-core's `SwarmLifecycleHelper`.
 
+AODV restarts need a patched ns-3 (NS3-005,
+[swarm-routing/sim-tools#374](https://github.com/swarm-routing/sim-tools/issues/374)).
+Stock AODV gives its broadcast route the lifetime
+`Simulator::GetMaximumSimulationTime()` and adds `Simulator::Now()` to it, so
+the `start` of an AODV node after t=0 overflows `int64`. A sanitized build
+aborts the run; any other build runs on through undefined behaviour. Run AODV
+`start`s on an ns-3 with [`ns3/patches/NS3-005/`](../patches/NS3-005/README.md)
+applied (`ghcr.io/swarm-routing/ns3-dev:*-patched-*`). Link `down`/`up` does not
+touch AODV's interfaces and is not affected, and neither are olsr, dsdv or hwmp.
+The suite reads the bug's signature in the ns-3 source at configure time
+(`ROUTING_BENCH_NS3_005`, as `apply.sh` decides). Where the bug is there, it
+leaves aodv out of its node `shutdown`/`crash` cases and says so. CI runs every
+case for all three arms on the patched sanitized image, pinned by digest
+(`ns3.yml`, job `failures-patched`).
+
 Rules, checked before any run (each refusal names `<file>:<line>`):
 
 - `time` is in simulated seconds, in `[0, --time)`, as `--flowsFile`'s start.

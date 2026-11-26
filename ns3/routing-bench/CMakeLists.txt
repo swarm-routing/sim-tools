@@ -30,6 +30,24 @@ else()
   add_compile_definitions(ROUTING_BENCH_NS3_SCOPED_TEST_ENUMS)
 endif()
 
+# NS3-005 (swarm-routing/sim-tools#374, docs/ns3-bugs.md): does this ns-3's
+# AODV add Now() to a route lifetime unchecked? Then an AODV interface set up
+# after t=0 overflows int64 (UB; a sanitized build aborts), which is what the
+# suite's --failures node restarts do. Decided from the source, as
+# ns3/patches/NS3-005/apply.sh decides: the bug's own signature, never the
+# version. The suite then leaves aodv out of its node shutdown/crash cases and
+# says so; on a patched tree (ns3.yml's patched-sanitized job) it runs them.
+set(_rb_aodv_rtable "${CMAKE_SOURCE_DIR}/src/aodv/model/aodv-rtable")
+if(EXISTS "${_rb_aodv_rtable}.cc" AND EXISTS "${_rb_aodv_rtable}.h")
+  file(READ "${_rb_aodv_rtable}.cc" _rb_rtable_cc)
+  file(READ "${_rb_aodv_rtable}.h" _rb_rtable_h)
+  if(_rb_rtable_cc MATCHES "m_lifeTime *\\( *lifetime *\\+ *Simulator::Now *\\("
+     OR _rb_rtable_h MATCHES "m_lifeTime *= *lt *\\+ *Simulator::Now *\\(")
+    add_compile_definitions(ROUTING_BENCH_NS3_005)
+    message(STATUS "routing-bench: NS3-005 present in this ns-3 (unsaturated AODV route lifetime)")
+  endif()
+endif()
+
 # A --coverage build (ns3-build-contrib --coverage with this module among its
 # quality modules: swarm-quality.cmake's cache variables) must write the
 # counters of the forked --isolateArms workers, which end with _exit (#202):

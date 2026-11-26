@@ -309,7 +309,7 @@ int ns3::bench::RunHarness(int argc, char* argv[], const std::string& program) {
                  flowsFile);
     std::string failuresFile;
     cmd.AddValue("failures",
-                 "ns3-tools#128: scripted failures, one '<time> <node> start|shutdown|crash' "
+                 "sim-tools#128: scripted failures, one '<time> <node> start|shutdown|crash' "
                  "or '<time> <a>-<b> down|up' per line ('#' comments), applied to every arm "
                  "at the same simulated time: a node op takes its IPv4 interfaces down or up "
                  "and cuts or restores its links on the channel, a link op cuts or restores "

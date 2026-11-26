@@ -45,6 +45,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -73,6 +74,15 @@
 constexpr bool kIcmpNoRoute = false;
 #else
 constexpr bool kIcmpNoRoute = true;
+#endif
+
+// Does this ns-3's AODV overflow a route lifetime set after t=0 (NS3-005,
+// swarm-routing/sim-tools#374)? CMakeLists.txt reads the bug's signature in
+// the ns-3 source, as ns3/patches/NS3-005/apply.sh does.
+#ifdef ROUTING_BENCH_NS3_005
+constexpr bool kNs3005 = true;
+#else
+constexpr bool kNs3005 = false;
 #endif
 
 // A --coverage build's counters, written before the child's _exit (strong, and
@@ -1108,6 +1118,13 @@ std::map<long, uint64_t> SeriesRx(const std::string& output, const std::string& 
 // olsr and dsdv. The same seed and schedule give the same bytes, in one process
 // and isolated; an empty schedule changes nothing but its two ##CONFIG##
 // keys; and a bad file is refused with its line.
+//
+// NS3-005 (swarm-routing/sim-tools#374): on an ns-3 whose AODV adds Now() to
+// a route lifetime unchecked, a node start sets AODV's interface up after
+// t=0 and overflows int64: a sanitized build aborts, any other runs on through
+// undefined behaviour. There aodv is left out of the node shutdown and crash
+// cases (its link case stays), and the test says so; on a tree with the NS3-005
+// patch (ns3.yml's patched-sanitized job) every case runs for all three arms.
 class FailuresTest : public TestCase {
 public:
     FailuresTest()
@@ -1172,9 +1189,23 @@ private:
         const std::vector<std::string> chainArgs{
             "--mobility=trace", "--traceFile=" + trace, "--flowsFile=" + flows, "--range=150",
             "--time=60",        "--runs=1",             "--perf=0",             "--diag",
-            "--seriesEvery=5",  "--protocols=aodv,olsr,dsdv"};
-        auto on = [&chainArgs](const std::string& file, std::vector<std::string> extra = {}) {
+            "--seriesEvery=5"};
+        // The arms of the node restart cases: aodv only where NS3-005 is fixed.
+        const std::vector<std::string> nodeArms =
+            kNs3005 ? std::vector<std::string>{"olsr", "dsdv"}
+                    : std::vector<std::string>{"aodv", "olsr", "dsdv"};
+        std::string nodeList;
+        for (const std::string& arm : nodeArms) nodeList += (nodeList.empty() ? "" : ",") + arm;
+        if (kNs3005) {
+            std::clog << "failures: NS3-005 (swarm-routing/sim-tools#374) is in this ns-3: "
+                         "aodv's node shutdown and crash cases are not run (a restart "
+                         "overflows its route lifetime); its link case is\n";
+        }
+        const std::string allArms = "aodv,olsr,dsdv";
+        auto on = [&chainArgs](const std::string& file, const std::string& arms,
+                               std::vector<std::string> extra = {}) {
             std::vector<std::string> a = chainArgs;
+            a.push_back("--protocols=" + arms);
             if (!file.empty()) a.push_back("--failures=" + file);
             a.insert(a.end(), extra.begin(), extra.end());
             return a;
@@ -1184,16 +1215,16 @@ private:
         std::vector<std::string> smallEmpty = small;
         smallEmpty.push_back("--failures=" + empty);
         std::vector<std::vector<std::string>> runs{
-            on(""),                            // 0: no failures
-            on(shutdown),                      // 1
-            on(crash),                         // 2
-            on(link),                          // 3
-            on(shutdown),                      // 4: 1 again
-            on(shutdown, {"--isolateArms=0"}), // 5: 1 in one process
+            on("", allArms),                             // 0: no failures
+            on(shutdown, nodeList),                      // 1
+            on(crash, nodeList),                         // 2
+            on(link, allArms),                           // 3
+            on(shutdown, nodeList),                      // 4: 1 again
+            on(shutdown, nodeList, {"--isolateArms=0"}), // 5: 1 in one process
             small,                             // 6: no file
             smallEmpty,                        // 7: an empty file
         };
-        for (const std::string& p : badPaths) runs.push_back(on(p));  // 8..
+        for (const std::string& p : badPaths) runs.push_back(on(p, allArms));  // 8..
         const auto t0 = std::chrono::steady_clock::now();
         const std::vector<ChildRun> res = RunHarnessInChildren(runs, true);
         const double wallS =
@@ -1218,7 +1249,10 @@ private:
             const std::map<long, uint64_t> base = SeriesRx(res[0].output, arm);
             NS_TEST_ASSERT_MSG_EQ(base.count(55), 1u, arm << ": a sample at 55 s");
             NS_TEST_ASSERT_MSG_GT(base.at(35) - base.at(25), 0u, arm << ": the chain delivers");
+            const bool nodeCases =
+                std::find(nodeArms.begin(), nodeArms.end(), arm) != nodeArms.end();
             for (const auto& [run, what] : cut) {
+                if (run != 3 && !nodeCases) continue;  // NS3-005: aodv's link case only
                 const std::map<long, uint64_t> rx = SeriesRx(res[run].output, arm);
                 NS_TEST_ASSERT_MSG_EQ(rx.count(55), 1u, arm << ", " << what << ": samples");
                 NS_TEST_ASSERT_MSG_GT(rx.at(20) - rx.at(10), 0u,
@@ -1234,7 +1268,7 @@ private:
         // Same seed, same schedule: the same bytes; and in one process the
         // same rows.
         NS_TEST_ASSERT_MSG_EQ(res[1].output, res[4].output, "the same schedule twice");
-        for (const std::string arm : {"aodv", "olsr", "dsdv"}) {
+        for (const std::string& arm : nodeArms) {
             NS_TEST_ASSERT_MSG_EQ(ArmRows(res[5].output, arm), ArmRows(res[1].output, arm),
                                   arm << ": the same rows with --isolateArms=0");
         }
