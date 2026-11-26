@@ -277,6 +277,7 @@ jobs:
       - name: "The image's ns-3 has NS3-005's patch"
         if: needs.changes.outputs.docs-only != 'true'
         timeout-minutes: 2
+        shell: bash
         run: |
           out=$(bash ns3/patches/NS3-005/apply.sh --dry-run /opt/ns-3)
           echo "$out"
