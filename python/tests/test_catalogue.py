@@ -4,8 +4,9 @@
 """Self-test for the network-family catalogue's readers (ns3-tools#55).
 
 - catalogue.py resolves cells on their preset and reads anchors.toml;
-- the manet family's cells are sweep's DISCRETE cells, flag for flag, and
-  the catalogue's floors are AntHocNet's anchors.yml floors (the fixture);
+- the manet and legacy families' cells are sweep's DISCRETE cells, flag for
+  flag, every DISCRETE cell is one of them, and the catalogue's floors are
+  AntHocNet's anchors.yml floors (the fixture);
 - `scenario_check preflight --family F --cell C` prints byte for byte what
   the same knobs given by hand print, and an explicit knob still wins;
 - `--anchors FILE.toml` gives `results` the same floors as the yml;
@@ -65,7 +66,7 @@ def test_resolve():
         catalogue.load(CATALOGUE, "nope")
         check(False, "load accepted an unknown family")
     except catalogue.CatalogueError as e:
-        check("fanet, manet, vanet" in str(e), f"the error lists the families: {e}")
+        check("fanet, legacy, manet, vanet" in str(e), f"the error lists the families: {e}")
 
 
 def test_root():
@@ -88,14 +89,18 @@ def test_root():
             os.environ[catalogue.ENV] = saved
 
 
-def test_manet_cells_are_sweeps():
-    cells = sweep.family_cells("manet", CATALOGUE)
-    for name, (klass, flags) in cells.items():
-        check(name in sweep.DISCRETE, f"manet cell {name} is not a sweep DISCRETE cell")
-        check(
-            sweep.DISCRETE[name] == (klass, flags),
-            f"{name}: {sweep.DISCRETE[name]} != {(klass, flags)}",
-        )
+def test_discrete_cells_are_sweeps():
+    seen = set()
+    for family in ("manet", "legacy"):
+        for name, (klass, flags) in sweep.family_cells(family, CATALOGUE).items():
+            check(name in sweep.DISCRETE, f"{family} cell {name} is not a sweep DISCRETE cell")
+            check(
+                sweep.DISCRETE[name] == (klass, flags),
+                f"{name}: {sweep.DISCRETE[name]} != {(klass, flags)}",
+            )
+            seen.add(name)
+    missing = sorted(set(sweep.DISCRETE) - seen)
+    check(not missing, f"DISCRETE cells not in the catalogue: {missing}")
 
 
 def test_floors_are_anthocnets():
@@ -232,7 +237,7 @@ def test_sweep_family():
 for t in (
     test_resolve,
     test_root,
-    test_manet_cells_are_sweeps,
+    test_discrete_cells_are_sweeps,
     test_floors_are_anthocnets,
     test_preflight_family,
     test_results_toml_anchors,

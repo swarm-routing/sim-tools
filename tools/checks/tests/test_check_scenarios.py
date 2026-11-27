@@ -85,6 +85,8 @@ DEFECTS = [
     ("manet/preset.toml", 'page = "docs/families/manet.md"', 'page = "x.md"', "does not exist"),
     ("README.md", "](../docs/families/vanet.md)", "]", "does not link ../docs/families/vanet.md"),
     ("vanet/preset.toml", "schema = 1", "schema = 2", "this reader reads 1"),
+    ("legacy/preset.toml", 'scenario = ""', "", "no scenario (a string"),
+    ("legacy/preset.toml", "range = 0 }", 'range = 0, scenario = "paper" }', "on the '' preset"),
     ("fanet/anchors.toml", 'family = "fanet"', 'family = "vanet"', "family = 'vanet'"),
 ]
 for path, old, new, want in DEFECTS:
@@ -127,6 +129,10 @@ GOOD = {
     "fanet-sparse": "scenario=fanet nNodes=30 areaX=1000 areaY=1000 areaZ=300 speed=30 "
     "speedMin=10 pause=0 range=250 propagation=range mobility=gaussmarkov transport=udp "
     "flows=10 cbrBps=2048",
+    "dense-small": "scenario= nNodes=16 time=1 runs=1 firstRun=1 areaX=250 areaY=250 speed=5 "
+    "pause=1 range=0 propagation=range mobility=rwp transport=udp flows=4 cbrBps=8000",
+    "heavy-load": "scenario= nNodes=50 areaX=1500 areaY=300 speed=20 pause=30 range=300 "
+    "propagation=range mobility=rwp transport=udp flows=40 cbrBps=4096",
     "paper-base": "scenario=paper nNodes=50 areaX=1500 areaY=300 speed=20 pause=30 range=300 "
     "propagation=range mobility=rwp transport=udp flows=20 cbrBps=512",
     "sparse-static": "scenario=paper nNodes=50 areaX=1500 areaY=300 speed=20 pause=900 "
