@@ -49,6 +49,8 @@ PREFLIGHT_FROM_PRESET = {
     "blocksY": "blocksY",
     "streetWidth": "streetWidth",
     "transport": "transport",
+    "standard": "standard",
+    "rateManager": "rateManager",
 }
 
 

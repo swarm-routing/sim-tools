@@ -37,6 +37,8 @@ preset, its preflight rules and its anchors, every value sourced, and a
 - [MANET](docs/families/manet.md): the Broch/CMU field;
 - [FANET](docs/families/fanet.md): a UAV swarm in 3-D;
 - [VANET](docs/families/vanet.md): a city street grid;
+- [static Wi-Fi mesh](docs/families/static-mesh.md): the paper field with
+  nothing moving, on 802.11a;
 - [legacy defaults](docs/families/legacy.md): the preset-free cells
   (dense-small, heavy-load).
 
