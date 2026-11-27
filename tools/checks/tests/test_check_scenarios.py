@@ -137,7 +137,9 @@ code, out = main_out(["--commands"])
 lines = out.splitlines()
 expect(
     f"--commands: {lines[:2]}",
-    code == 0 and lines[0].startswith("disaster-main\t--scenario=disaster --traceFile=/"),
+    code == 0
+    and lines[0].startswith("disaster-main\t--scenario=disaster --traceFile=/")
+    and " --time=30 " in lines[0],
 )
 SCENE = REPO / "scenarios" / "disaster" / "fixtures"
 GOOD = {

@@ -83,7 +83,22 @@ CONFIG_KEYS = {
     "flowsFile": None,
 }
 # The evidence run: one short seed of one stock arm, enough to print ##CONFIG##.
-EVIDENCE_FLAGS = "--time=1 --runs=1 --protocols=dsdv"
+EVIDENCE_FLAGS = "--runs=1 --protocols=dsdv"
+
+
+def evidence_time(values):
+    """The evidence run's --time: 1 s, or 2 s past the last flow start of a
+    --flowsFile (the harness refuses a flow that starts after --time, and
+    stops every flow 1 s before it)."""
+    path = values.get("flowsFile")
+    if not path:
+        return 1
+    starts = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        fields = line.split("#", 1)[0].split()
+        if len(fields) == 5:
+            starts.append(float(fields[2]))
+    return int(max(starts, default=0)) + 2
 
 
 def same(a, b):
@@ -344,8 +359,8 @@ def main(argv=None):
     ap.add_argument("--configs", metavar="DIR", help="check routing-compare's ##CONFIG## lines")
     args = ap.parse_args(argv)
     if args.commands:
-        for _family, name, _values, flags in all_cells(args.catalogue):
-            print(f"{name}\t{flags} {EVIDENCE_FLAGS}")
+        for _family, name, values, flags in all_cells(args.catalogue):
+            print(f"{name}\t{flags} --time={evidence_time(values)} {EVIDENCE_FLAGS}")
         return 0
     if args.configs:
         findings = check_configs(args.catalogue, args.configs)

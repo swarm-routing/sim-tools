@@ -101,7 +101,8 @@ Cell names are unique across the catalogue.
 3. Run `python3 tools/checks/check-scenarios.py`; it must print `ok`.
 4. Check the preset against the harness. `--commands` prints one line per
    cell: the cell name, a TAB, then routing-compare's arguments for a
-   1-second run. Run each line's arguments into `DIR/<cell>.txt`. Then
+   1-second run (a `--flowsFile` cell runs until 2 s past its last flow
+   start, which the harness requires). Run each line's arguments into `DIR/<cell>.txt`. Then
    `--configs DIR` compares each file's `##CONFIG##` line with the
    catalogue. `tools/checks/check-scenario-configs.sh NS3DIR` does both
    steps on a built tree, and CI runs it (`ns3.yml`, the stock-arms job).
