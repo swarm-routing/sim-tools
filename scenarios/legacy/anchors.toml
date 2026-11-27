@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The legacy-default cells' anchor: analytic (one in-range hop; the stack
+# itself must deliver). Floor and cell adapted from swarm-routing/AntHocNet
+# ns3/tools/anchors.yml and tools/checks/check-anchors.sh (GPL-2.0-only,
+# AntHocNet #51, #59); the floor key is that file's.
+# Format: scenarios/README.md.
+schema = 1
+family = "legacy"
+
+[anchors.single-hop]
+kind = "analytic"
+flags = { nNodes = 2, areaX = 50, areaY = 50, range = 300, pause = 900, speed = 1, time = 60, runs = 1 }
+arms = ["aodv", "dsdv"]
+expected = "PDR about 100 %: every packet is one in-range hop on a fixed 2 Mbit/s radio"
+source = "derivation: two static nodes in a 50 x 50 m field on a 300 m disk are always in range, so every flow is one hop and only the radio and MAC can lose a packet; OLSR is left out because its multi-second neighbour sensing loses early packets on a 60 s run (a startup artefact, not a channel property)"
+measured = "AODV and DSDV 100.0 % after AntHocNet #51 (AntHocNet ns3/tools/anchors.yml)"
+floors = { single_hop_pdr_min = 99.0 }
+margin = "a #51-style rate-manager regression reads about 50 %, so 99.0 has a wide margin while still catching partial regressions"

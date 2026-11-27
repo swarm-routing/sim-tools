@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The legacy-default cells' preflight: per cell, the ns3-scenario-check
+# preflight knobs (equal to the values the cell resolves to; check-scenarios.py
+# checks it) and the verdict line they give. Run one with
+#   ns3-scenario-check preflight --family legacy --cell heavy-load
+# Format: scenarios/README.md.
+schema = 1
+family = "legacy"
+
+[cells.dense-small]
+knobs = { nodes = 16, areaX = 250, areaY = 250, range = 0, time = 40, pause = 1, speed = 5, flows = 4, cbrBps = 8000, mobility = "rwp", propagation = "range" }
+verdict = "FAIL (2 fail, 2 warn)"
+why = "range = 0 is ns-3's default log-distance channel, which preflight does not model: it reads a 0 m disk, so its degree and link-lifetime FAILs (and the #230 WARN) are artefacts of the knob, not of the cell. The time WARN is real: 40 s is the harness's quick default; pass --time for a published cell. Read this cell's connectivity from its oracle rows, not from preflight"
+
+[cells.heavy-load]
+knobs = { nodes = 50, areaX = 1500, areaY = 300, range = 300, time = 40, pause = 30, speed = 20, flows = 40, cbrBps = 4096, mobility = "rwp", propagation = "range" }
+verdict = "WARN (0 fail, 2 warn)"
+why = "the time WARN (40 s, the harness's quick default; pass --time for a published cell) and the #230 path-diversity WARN (at 20 m/s a 300 m link lives ~7.5 s, under the 10 s pathWindowS); PDR, delay and NRL are not affected"

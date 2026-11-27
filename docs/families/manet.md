@@ -141,5 +141,4 @@ This page and `scenarios/manet/` were adapted from swarm-routing/AntHocNet:
 
 These files are GPL-2.0-only, like this page. AntHocNet's other MANET pages,
 `dense-small` and `heavy-load`, run on routing-compare's built-in defaults
-rather than on a preset. They come into the catalogue with a follow-up
-(swarm-routing/sim-tools#55).
+rather than on a preset: they are the [legacy defaults](legacy.md) cells.

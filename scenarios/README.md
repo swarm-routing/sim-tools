@@ -13,6 +13,7 @@ data and docs, `GPL-2.0-only` ([`LICENSING.md`](../LICENSING.md)).
 | [`manet`](manet/) | `--scenario=paper` | paper-base, sparse-static, high-mobility, large-scale | broch-low-mobility (literature) | [docs/families/manet.md](../docs/families/manet.md) |
 | [`fanet`](fanet/) | `--scenario=fanet` | fanet-main, fanet-sparse | fanet-single-hop-3d, fanet-vertical-3d (analytic) | [docs/families/fanet.md](../docs/families/fanet.md) |
 | [`vanet`](vanet/) | `--scenario=vanet` | vanet-main, vanet-sparse | vanet-single-hop, vanet-building (analytic) | [docs/families/vanet.md](../docs/families/vanet.md) |
+| [`legacy`](legacy/) | none (the harness's defaults) | dense-small, heavy-load | single-hop (analytic) | [docs/families/legacy.md](../docs/families/legacy.md) |
 
 The catalogue describes the presets of routing-bench
 (`ns3/routing-bench/model/routing-bench-harness.cc`). It does not configure
@@ -56,7 +57,7 @@ TOML, read with Python's `tomllib`. Every file starts with `schema = 1` and
 | key | what |
 |---|---|
 | `title`, `page` | the family's name and its page (`docs/families/<family>.md`) |
-| `scenario` | routing-compare's `--scenario` value |
+| `scenario` | routing-compare's `--scenario` value; `""` for cells that pass none and run on the harness's built-in defaults (`legacy`) |
 | `[values.<flag>]` | each routing-compare flag the preset sets, as the value it resolves to: `value`, `kind`, `source` |
 | `[fixed.<name>]` | a setting of the preset that no flag changes (the flow start window, the radio): `value`, `kind`, `source` |
 | `[cells.<name>]` | a cell: `class` (its difficulty label) and `flags`, the routing-compare flags on top of the preset (`scenario` names the preset; `area` sets areaX and areaY, as the harness's shorthand) |

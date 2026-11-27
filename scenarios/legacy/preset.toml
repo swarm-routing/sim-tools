@@ -1,0 +1,109 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The legacy-default cells: routing-compare run with no --scenario, on the
+# harness's built-in defaults, and the two cells of AntHocNet's discrete
+# taxonomy that run on them (dense-small, heavy-load). Cells adapted from
+# swarm-routing/AntHocNet docs/benchmarks/scenarios/{dense-small,heavy-load}.md
+# and ns3/tools/run-scenarios.py (GPL-2.0-only); the values are the ones
+# routing-bench resolves to without a preset
+# (ns3/routing-bench/model/routing-bench-harness.cc). Format: scenarios/README.md.
+schema = 1
+family = "legacy"
+title = "Legacy defaults: routing-compare without a preset"
+# No --scenario: the harness's built-in defaults (scenarios/README.md).
+scenario = ""
+page = "docs/families/legacy.md"
+
+[values.nNodes]
+value = 20
+kind = "harness"
+source = "routing-compare's default without a preset (routing-bench-harness.cc)"
+
+[values.areaX]
+value = 300
+kind = "harness"
+source = "routing-compare's default without a preset: a 300 x 300 m square"
+
+[values.areaY]
+value = 300
+kind = "harness"
+source = "routing-compare's default without a preset: a 300 x 300 m square"
+
+[values.areaZ]
+value = 0
+kind = "harness"
+source = "routing-compare's default: a planar field"
+
+[values.time]
+value = 40
+kind = "harness"
+source = "routing-compare's default without a preset: 40 s, a quick run; ns3-tool sweep --time overrides it"
+
+[values.speed]
+value = 5
+kind = "harness"
+source = "routing-compare's default without a preset: random waypoint, maximum speed 5 m/s"
+
+[values.speedMin]
+value = 1
+kind = "harness"
+source = "routing-compare's default floor: speeds U(1, speed), so no node idles at zero speed"
+
+[values.pause]
+value = 1
+kind = "harness"
+source = "routing-compare's default without a preset: 1 s pause"
+
+[values.range]
+value = 0
+kind = "harness"
+source = "routing-compare's default without a preset: 0, no disk; with --propagation=range the channel is ns-3's YansWifiChannelHelper::Default() (log-distance loss), so no fixed range bounds a link"
+
+[values.flows]
+value = 5
+kind = "harness"
+source = "routing-compare's default without a preset: 5 CBR flows"
+
+[values.cbrBps]
+value = 8000
+kind = "harness"
+source = "routing-compare's default without a preset: 8000 bit/s per flow"
+
+[values.mobility]
+value = "rwp"
+kind = "harness"
+source = "routing-compare's default: random waypoint"
+
+[values.propagation]
+value = "range"
+kind = "harness"
+source = "routing-compare's default; with range = 0 it selects ns-3's default channel, not a disk (see range)"
+
+[values.transport]
+value = "udp"
+kind = "harness"
+source = "routing-compare's default: CBR over UDP"
+
+[values.runs]
+value = 1
+kind = "harness"
+source = "routing-compare's default; a comparison passes --runs=20 or more (golden rule 6)"
+
+[fixed.startWindow]
+value = 5
+kind = "harness"
+source = "flows start uniformly in [0, 5] s without a preset (routing-bench-harness.cc; the paper, fanet and vanet presets use 180 s)"
+
+[fixed.radio]
+value = "802.11b DSSS, constant 2 Mbit/s"
+kind = "harness"
+source = "routing-compare's defaults --standard=80211b --rateManager=constant2, the paper's radio"
+
+# The cells: the discrete taxonomy's cells that run without a preset (ns3-tool
+# sweep's DISCRETE; python/tests/test_catalogue.py holds them equal).
+[cells.dense-small]
+class = "dense / low-mobility"
+flags = { nNodes = 16, area = 250, speed = 5, pause = 1, flows = 4, range = 0 }
+
+[cells.heavy-load]
+class = "dense / heavy-load"
+flags = { nNodes = 50, areaX = 1500, areaY = 300, speed = 20, pause = 30, range = 300, flows = 40, cbrBps = 4096 }

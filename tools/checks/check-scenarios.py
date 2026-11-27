@@ -140,7 +140,12 @@ class Checker:
             if data.get("family") != family:
                 self.bad(f"{where}/{stem}.toml", f"family = {data.get('family')!r}")
         preset = fam["preset"]
-        for key in ("scenario", "title", "page"):
+        # scenario = "" is the harness without a preset (its built-in defaults);
+        # a whitespace-only name is neither a preset nor "".
+        scenario = preset.get("scenario")
+        if not isinstance(scenario, str) or (scenario and not scenario.strip()):
+            self.bad(f"{where}/preset.toml", 'no scenario (a string; "" for no preset)')
+        for key in ("title", "page"):
             if not str(preset.get(key, "")).strip():
                 self.bad(f"{where}/preset.toml", f"no {key}")
         values = preset.get("values", {})
