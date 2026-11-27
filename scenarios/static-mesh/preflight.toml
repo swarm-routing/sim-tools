@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The static Wi-Fi mesh family's preflight: per cell, the ns3-scenario-check
+# preflight knobs (equal to the values the cell resolves to; check-scenarios.py
+# checks it) and the verdict line they give. Run it with
+#   ns3-scenario-check preflight --family static-mesh --cell static-mesh
+# Format: scenarios/README.md.
+schema = 1
+family = "static-mesh"
+
+[cells.static-mesh]
+knobs = { nodes = 50, areaX = 1500, areaY = 300, range = 300, time = 900, pause = 900, speed = 20, flows = 20, cbrBps = 512, mobility = "rwp", propagation = "range", standard = "80211a", rateManager = "constant6", rateMbps = 6 }
+verdict = "WARN (0 fail, 2 warn)"
+why = "pause >= sim time: the field is static, which is the family's purpose; --standard 80211a: the cell's radio is not comparable to the 802.11b corpus, so every arm in it must run on the same radio (AntHocNet #708). rateMbps = 6 is the offered-load rule's rate for constant6"

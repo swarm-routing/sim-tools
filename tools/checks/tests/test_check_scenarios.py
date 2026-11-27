@@ -87,6 +87,19 @@ DEFECTS = [
     ("vanet/preset.toml", "schema = 1", "schema = 2", "this reader reads 1"),
     ("legacy/preset.toml", 'scenario = ""', "", "no scenario (a string"),
     ("legacy/preset.toml", 'scenario = ""', 'scenario = "  "', "no scenario (a string"),
+    (
+        "legacy/preset.toml",
+        'scenario = ""',
+        'scenario = "none"',
+        "no family's preset has scenario = ''",
+    ),
+    ("static-mesh/anchors.toml", "runs = 2,", "runs = 2, warp = 1,", "flags: flag 'warp'"),
+    (
+        "static-mesh/preflight.toml",
+        'standard = "80211a"',
+        'standard = "80211b"',
+        "standard = 80211b, but",
+    ),
     ("legacy/preset.toml", "range = 0 }", 'range = 0, scenario = "paper" }', "on the '' preset"),
     ("fanet/anchors.toml", 'family = "fanet"', 'family = "vanet"', "family = 'vanet'"),
 ]
@@ -131,9 +144,13 @@ GOOD = {
     "speedMin=10 pause=0 range=250 propagation=range mobility=gaussmarkov transport=udp "
     "flows=10 cbrBps=2048",
     "dense-small": "scenario= nNodes=16 time=1 runs=1 firstRun=1 areaX=250 areaY=250 speed=5 "
-    "pause=1 range=0 propagation=range mobility=rwp transport=udp flows=4 cbrBps=8000",
+    "pause=1 range=0 propagation=range mobility=rwp transport=udp flows=4 cbrBps=8000 "
+    "rateManager=constant2",
     "heavy-load": "scenario= nNodes=50 areaX=1500 areaY=300 speed=20 pause=30 range=300 "
-    "propagation=range mobility=rwp transport=udp flows=40 cbrBps=4096",
+    "propagation=range mobility=rwp transport=udp flows=40 cbrBps=4096 rateManager=constant2",
+    "static-mesh": "scenario=paper nNodes=50 areaX=1500 areaY=300 speed=20 pause=900 range=300 "
+    "propagation=range mobility=rwp transport=udp flows=20 cbrBps=512 offTime=0 "
+    "rateManager=constant6 standard=80211a protocols=dsdv",
     "paper-base": "scenario=paper nNodes=50 areaX=1500 areaY=300 speed=20 pause=30 range=300 "
     "propagation=range mobility=rwp transport=udp flows=20 cbrBps=512",
     "sparse-static": "scenario=paper nNodes=50 areaX=1500 areaY=300 speed=20 pause=900 "
@@ -157,11 +174,14 @@ with tempfile.TemporaryDirectory() as tmp:
     bad = GOOD["vanet-sparse"].replace("nNodes=40", "nNodes=41").replace(" speedMin=10", "")
     (Path(tmp) / "vanet-sparse.txt").write_text(f"##CONFIG## {bad}\n", encoding="utf-8")
     (Path(tmp) / "paper-base.txt").unlink()
+    mesh = GOOD["static-mesh"].replace(" standard=80211a", "")
+    (Path(tmp) / "static-mesh.txt").write_text(f"##CONFIG## {mesh}\n", encoding="utf-8")
     code, out = main_out(["--configs", tmp])
     for want in (
         "nNodes=41, the catalogue says 40",
         "speedMin=1, the catalogue says 10",
         "no ##CONFIG##",
+        "standard=80211b, the catalogue says 80211a",
     ):
         expect(f"--configs: {want!r} not in {out}", code == 1 and want in out)
 

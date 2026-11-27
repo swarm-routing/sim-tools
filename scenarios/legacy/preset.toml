@@ -93,10 +93,15 @@ value = 5
 kind = "harness"
 source = "flows start uniformly in [0, 5] s without a preset (routing-bench-harness.cc; the paper, fanet and vanet presets use 180 s)"
 
-[fixed.radio]
-value = "802.11b DSSS, constant 2 Mbit/s"
+[values.standard]
+value = "80211b"
 kind = "harness"
-source = "routing-compare's defaults --standard=80211b --rateManager=constant2, the paper's radio"
+source = "routing-compare's default radio, 2.4 GHz DSSS (the paper's)"
+
+[values.rateManager]
+value = "constant2"
+kind = "harness"
+source = "routing-compare's default rate control, constant 2 Mbit/s DSSS (the paper's)"
 
 # The cells: the discrete taxonomy's cells that run without a preset (ns3-tool
 # sweep's DISCRETE; python/tests/test_catalogue.py holds them equal).

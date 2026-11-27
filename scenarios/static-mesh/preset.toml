@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The static Wi-Fi mesh family: routing-compare --scenario=paper (the Broch/CMU
+# field) with mobility switched off and the 802.11a radio stock 802.11s runs
+# on, the community-network / Freifunk-class mesh. Values and sources adapted
+# from swarm-routing/AntHocNet docs/benchmarks/static-mesh.md and
+# docs/benchmarks/v2.4.0-campaign.md (GPL-2.0-only); the preset values are the
+# manet family's (the same --scenario=paper), the radio is the cell's.
+# Format: scenarios/README.md.
+schema = 1
+family = "static-mesh"
+title = "Static Wi-Fi mesh: the paper field with nothing moving, on 802.11a"
+scenario = "paper"
+page = "docs/families/static-mesh.md"
+
+[values.nNodes]
+value = 50
+kind = "sourced"
+source = "Broch et al. 1998 (https://doi.org/10.1145/288235.288256): 50 nodes; the AntHocNet paper's base scenario (Di Caro et al. 2004 §4, https://doi.org/10.1007/978-3-540-30217-9_47)"
+
+[values.areaX]
+value = 1500
+kind = "sourced"
+source = "Broch et al. 1998: a 1500 x 300 m field; Di Caro et al. 2004 §4"
+
+[values.areaY]
+value = 300
+kind = "sourced"
+source = "Broch et al. 1998: a 1500 x 300 m field; Di Caro et al. 2004 §4"
+
+[values.areaZ]
+value = 0
+kind = "harness"
+source = "routing-compare's default: a planar field (3-D is the fanet family)"
+
+[values.time]
+value = 900
+kind = "sourced"
+source = "Broch et al. 1998: 900 s runs"
+
+[values.speed]
+value = 20
+kind = "sourced"
+source = "Broch et al. 1998: random waypoint, maximum speed 20 m/s; Di Caro et al. 2004 §4"
+
+[values.speedMin]
+value = 1
+kind = "harness"
+source = "routing-compare's default floor: speeds U(1, speed), so no node idles at zero speed"
+
+[values.pause]
+value = 30
+kind = "sourced"
+source = "Di Caro et al. 2004 §4: 30 s pause; one point of Broch et al. 1998's 0-900 s pause sweep"
+
+[values.range]
+value = 300
+kind = "sourced"
+source = "Di Caro et al. 2004 §4: 300 m range (Broch et al. 1998 used 250 m); a disk, see propagation"
+
+[values.flows]
+value = 20
+kind = "sourced"
+source = "Di Caro et al. 2004 §4: 20 CBR sources; one of Broch et al. 1998's 10/20/30 source counts"
+
+[values.cbrBps]
+value = 512
+kind = "sourced"
+source = "Di Caro et al. 2004 §4: one 64-byte packet per second per source"
+
+[values.mobility]
+value = "rwp"
+kind = "sourced"
+source = "Broch et al. 1998: random waypoint"
+
+[values.propagation]
+value = "range"
+kind = "harness"
+source = "routing-compare's default disk channel (the calibration disentangler, AntHocNet #24); --propagation=tworay|nakagami are the channel arms"
+
+[values.transport]
+value = "udp"
+kind = "harness"
+source = "routing-compare's default: CBR over UDP, what every published number used"
+
+[values.runs]
+value = 1
+kind = "harness"
+source = "routing-compare's default; a comparison passes --runs=20 or more (golden rule 6)"
+
+[fixed.startWindow]
+value = 180
+kind = "chosen"
+source = "flows start uniformly in [0, 180] s (the paper preset's start window; no flag sets it)"
+
+[values.standard]
+value = "80211b"
+kind = "harness"
+source = "routing-compare's default radio, 2.4 GHz DSSS (the paper's); the static-mesh cell sets 80211a"
+
+[values.rateManager]
+value = "constant2"
+kind = "harness"
+source = "routing-compare's default rate control, constant 2 Mbit/s DSSS (the paper's); the static-mesh cell sets constant6"
+
+# The cell: AntHocNet's static-mesh cell since its v2.4.0 campaign. pause 900
+# on a 900 s run: every node holds its t = 0 position (AntHocNet
+# docs/benchmarks/static-mesh.md). 802.11a at a fixed 6 Mbit/s: ns-3 tunes every
+# 802.11s mesh interface to 5 GHz channel 100, so the hwmp arm needs it, and the
+# maintainer's decision of 2026-10-19 (AntHocNet #708) moved every arm of the
+# cell to it; the disk channel ignores frequency, so the topology is unchanged.
+[cells.static-mesh]
+class = "static / mesh"
+flags = { scenario = "paper", pause = 900, standard = "80211a", rateManager = "constant6" }
