@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The disaster family: routing-compare --scenario=disaster, which replays a
+# generated scene: first-responder teams moving by role around a mall with two
+# walled fire compartments (Aschenbruck et al. 2007's disaster-area model, laid
+# out as Ben Arbia et al. 2017 apply it). Values and sources adapted from
+# swarm-routing/AntHocNet docs/benchmarks/scenarios/disaster.md and
+# tools/bench/disaster_scene.py (GPL-2.0-only docs, MIT OR GPL-2.0-only script;
+# AntHocNet #580). The scene is fixtures/, written by
+# `python3 -m ns3_tool.disaster_scene gen --seed 1` (python/tests/test_disaster_scene.py
+# holds them equal). Format: scenarios/README.md.
+schema = 1
+family = "disaster"
+title = "Disaster area: responders by role around a walled incident site"
+scenario = "disaster"
+page = "docs/families/disaster.md"
+fixtures = ["fixtures/disaster.ns2", "fixtures/disaster.flows", "fixtures/disaster.buildings"]
+
+# The preset requires the scene: --traceFile, --flowsFile and --buildings have
+# no default, so these three values are what the family's cells pass.
+[values.traceFile]
+value = "fixtures/disaster.ns2"
+kind = "chosen"
+source = "the scene of scene seed 1 (disaster_scene gen --seed 1), committed so every cell replays the same motion; one scene seed is a disclosed threat (AntHocNet docs/benchmarks/scenarios/disaster.md)"
+
+[values.flowsFile]
+value = "fixtures/disaster.flows"
+kind = "chosen"
+source = "the flows of the same scene: every team reports to the command post, which sends orders back (Ben Arbia et al. 2017, arXiv:1711.10838, https://arxiv.org/abs/1711.10838: all rescuers send to one sink at the main gate, one packet per second)"
+
+[values.buildings]
+value = "120,170,320,330;680,170,880,330"
+kind = "chosen"
+source = "the two fire compartments, 200 x 160 m at the mall's west and east ends (Ben Arbia et al. 2017: a fire at two opposite sides of the mall); a shell over the whole mall was rejected because it cut every indoor team off (the oracle delivered 42 %, seed 1, 300 s)"
+
+[values.nNodes]
+value = 47
+kind = "sourced"
+source = "the trace's node count (the harness takes it from --traceFile): the command post, 20 firefighters, 10 medics, 6 treatment staff, 4 ambulances and 6 police, in the zones and roles of Aschenbruck et al. 2007 (https://doi.org/10.1145/1298126.1298131)"
+
+[values.areaX]
+value = 1000
+kind = "chosen"
+source = "the disaster preset's field, 1000 x 500 m: the mall (800 x 200 m), the treatment area and transport zone south of it, the hospital exit at the corner"
+
+[values.areaY]
+value = 500
+kind = "chosen"
+source = "as areaX"
+
+[values.areaZ]
+value = 0
+kind = "harness"
+source = "routing-compare's default: a planar field"
+
+[values.time]
+value = 900
+kind = "chosen"
+source = "the disaster preset's horizon, the corpus's 900 s (the scene's tracks run to 900 s)"
+
+[values.flows]
+value = 20
+kind = "sourced"
+source = "the flows file's count (the harness takes it from --flowsFile): 16 uplink (8 firefighters, 4 medics, 2 treatment staff, 2 police) and 4 downlink, each CBR at 1 x 64 B/s (512 bit/s, Ben Arbia et al. 2017), starting in [0, 30] s"
+
+[values.mobility]
+value = "trace"
+kind = "harness"
+source = "the disaster preset's default: replay --traceFile (role-driven motion, Aschenbruck et al. 2007)"
+
+[values.propagation]
+value = "urban"
+kind = "sourced"
+source = "the disaster preset's default: two-ray path loss at 2.4 GHz plus the obstacle shadowing of Sommer et al. 2011 (https://doi.org/10.1109/WONS.2011.5720204: 9 dB per wall cut, 0.4 dB per metre inside), over --buildings in place of a street grid"
+
+[values.transport]
+value = "udp"
+kind = "harness"
+source = "routing-compare's default: CBR over UDP"
+
+[values.runs]
+value = 1
+kind = "harness"
+source = "routing-compare's default; a comparison passes --runs=20 or more (golden rule 6)"
+
+[fixed.inert]
+value = "speed 5, speedMin 1, pause 1, range 0, cbrBps 8000, start window 5 s"
+kind = "harness"
+source = "routing-compare's defaults, printed in ##CONFIG## but inert here: the trace moves the nodes, the urban channel has no hard range (two-ray decode radius 423.3 m, which preflight is given as its disk estimate), and the flows file sets each flow's rate and start"
+
+[fixed.oracle]
+value = "recompute every 100 ms"
+kind = "chosen"
+source = "the oracle arm's cadence on this preset (routing-bench #580): links open and close at the compartment walls as people walk through the doors, the VANET corner case on foot (the #506 rule)"
+
+[fixed.radio]
+value = "802.11b DSSS, constant 2 Mbit/s"
+kind = "harness"
+source = "the corpus's radio (--standard=80211b --rateManager=constant2, the defaults): a family changes the scenario, not the stack (AntHocNet ADR-0019)"
+
+[cells.disaster-main]
+class = "disaster / emergency response"
+flags = { scenario = "disaster", traceFile = "fixtures/disaster.ns2", flowsFile = "fixtures/disaster.flows", buildings = "120,170,320,330;680,170,880,330" }

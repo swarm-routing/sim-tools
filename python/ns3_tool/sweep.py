@@ -374,10 +374,14 @@ def family_cells(family, base=None):
     except ImportError:
         import catalogue
     try:
-        fam = catalogue.load(catalogue.root(base), family)
+        base = catalogue.root(base)
+        fam = catalogue.load(base, family)
     except catalogue.CatalogueError as e:
         raise SystemExit(f"--family {family}: {e}") from e
-    return {name: (c["class"], dict(c["flags"])) for name, c in catalogue.cells(fam).items()}
+    return {
+        name: (c["class"], catalogue.with_fixtures(base, family, c["flags"]))
+        for name, c in catalogue.cells(fam).items()
+    }
 
 
 def main(argv=None):

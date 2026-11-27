@@ -52,7 +52,7 @@ Licence column: **GPL** is `GPL-2.0-only`, **dual** is `MIT OR GPL-2.0-only`
 | `python/ns3_tool/` | agnostic (see "Python modules") | reader, plausibility, campaign | dual | PyPI `swarm-sim-tools` (wheel, sdist; also release assets) | AntHocNet (`ns3-tools.lock`), the guide's users, this repository's campaign workflows |
 | `python/tests/` | agnostic | tests | dual; `fixtures/` GPL (data) | not shipped | CI (`python.yml`, `ns3.yml` python-quality) |
 | `python/tests/benchmarks/` | agnostic | contract (vendored validator of swarm-routing/benchmarks at a pinned commit) | dual | not shipped | the reader tests |
-| `scenarios/<family>/{preset,preflight,anchors}.toml`, `scenarios/README.md` | agnostic data (presets are `routing-compare` flags) | catalogue | GPL | not packaged: read from a checkout (`--catalogue`, `$NS3_TOOL_SCENARIOS`) | `ns3-tool sweep --family`, `ns3-scenario-check`, `check-scenarios.py`, `docs/families/` |
+| `scenarios/<family>/{preset,preflight,anchors}.toml`, `scenarios/<family>/fixtures/`, `scenarios/README.md` | agnostic data (presets are `routing-compare` flags) | catalogue | GPL | not packaged: read from a checkout (`--catalogue`, `$NS3_TOOL_SCENARIOS`) | `ns3-tool sweep --family`, `ns3-scenario-check`, `check-scenarios.py`, `docs/families/` |
 | `campaigns/*.toml` | agnostic (pins ns-3 images and modules) | plan | GPL | not packaged; copied into each benchmarks run | `campaign-image.yml`, `campaign-cell.yml`, swarm-routing/benchmarks |
 | `tools/checks/check-stock-arms.sh`, `arm-delivers.sh`, `check-scaffold-arm.sh`, `check-perf-markers.sh` | ns-3 | check | dual | not shipped (#350) | `ns3.yml`; sim-containers `test/downstream.txt` (`check-stock-arms.sh` at `@main`); the guide |
 | `tools/checks/check-scenarios.py`, `check-refs.py`, `check-python-boundary.py` (#377), `tests/` | agnostic | check | dual | not shipped | `make test`, CI |
@@ -84,6 +84,7 @@ ns-3-bound one and names no ns-3 path or program.
 | `cost` | campaign (runner-minute model) | agnostic |
 | `cli` | dispatcher | agnostic (dispatches to ns-3-bound commands too) |
 | `catalogue` | catalogue reader; turns presets into `routing-compare` flags | ns-3 |
+| `disaster_scene` | catalogue (the disaster family's scene generator: an ns-2 trace, `routing-compare` flows and buildings) | ns-3 |
 | `sweep` | harness front-end (runs `routing-compare` in an ns-3 tree) | ns-3 |
 | `scaffold` | arm tooling (writes an ns-3 contrib module) | ns-3 |
 | `campaign`, `change_plan` | campaign (plan, cell key and reuse are agnostic; image build and dispatch use `ns3-dev`, `ns3-build-contrib`) | ns-3 |

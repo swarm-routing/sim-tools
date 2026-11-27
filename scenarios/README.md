@@ -13,6 +13,8 @@ data and docs, `GPL-2.0-only` ([`LICENSING.md`](../LICENSING.md)).
 | [`manet`](manet/) | `--scenario=paper` | paper-base, sparse-static, high-mobility, large-scale | broch-low-mobility (literature) | [docs/families/manet.md](../docs/families/manet.md) |
 | [`fanet`](fanet/) | `--scenario=fanet` | fanet-main, fanet-sparse | fanet-single-hop-3d, fanet-vertical-3d (analytic) | [docs/families/fanet.md](../docs/families/fanet.md) |
 | [`vanet`](vanet/) | `--scenario=vanet` | vanet-main, vanet-sparse | vanet-single-hop, vanet-building (analytic) | [docs/families/vanet.md](../docs/families/vanet.md) |
+| [`static-mesh`](static-mesh/) | `--scenario=paper` | static-mesh | mesh-hwmp-shortest (analytic) | [docs/families/static-mesh.md](../docs/families/static-mesh.md) |
+| [`disaster`](disaster/) | `--scenario=disaster` (a replayed scene, `fixtures/`) | disaster-main | disaster-arm (regression) | [docs/families/disaster.md](../docs/families/disaster.md) |
 | [`legacy`](legacy/) | none (the harness's defaults) | dense-small, heavy-load | single-hop (analytic) | [docs/families/legacy.md](../docs/families/legacy.md) |
 
 The catalogue describes the presets of routing-bench
@@ -58,10 +60,10 @@ TOML, read with Python's `tomllib`. Every file starts with `schema = 1` and
 |---|---|
 | `title`, `page` | the family's name and its page (`docs/families/<family>.md`) |
 | `scenario` | routing-compare's `--scenario` value; `""` for cells that pass none and run on the harness's built-in defaults (`legacy`) |
-| `[values.<flag>]` | each routing-compare flag the preset sets, as the value it resolves to: `value`, `kind`, `source` |
+| `[values.<flag>]` | each routing-compare flag the preset sets, as the value it resolves to: `value`, `kind`, `source`. A cell may set only a flag listed here, so a family whose cells change the radio lists `standard` and `rateManager` (`static-mesh`) |
 | `[fixed.<name>]` | a setting of the preset that no flag changes (the flow start window, the radio): `value`, `kind`, `source` |
 | `[cells.<name>]` | a cell: `class` (its difficulty label) and `flags`, the routing-compare flags on top of the preset (`scenario` names the preset; `area` sets areaX and areaY, as the harness's shorthand) |
-| `fixtures` | (optional) files the family's cells read, relative to its directory |
+| `fixtures` | (optional) files the family's cells read, relative to its directory. A `traceFile` or `flowsFile` value is such a path: `ns3-tool sweep`, preflight and `check-scenarios.py --commands` make it absolute, because routing-compare opens it from the ns-3 tree. A preset that requires a flag with no default (disaster's scene) lists it in `[values]` with the value the family's cells pass |
 
 A value's `kind` is one of:
 - `sourced`: a published setup uses the value or brackets it;
@@ -84,7 +86,7 @@ Cell names are unique across the catalogue.
 | key | what |
 |---|---|
 | `kind` | `literature` (a published trend), `analytic` (geometry or an identity decides the answer) or `regression` (a floor from this org's own measurement) |
-| `flags`, `arms` | the anchor cell's routing-compare flags on top of the preset, and the arms its floors judge (`--anchor-arms`) |
+| `flags`, `arms` | the anchor cell's routing-compare flags, and the arms its floors judge (`--anchor-arms`). The flags resolve on the preset of the `scenario` they name, `""` when they name none: usually the family's own, but an anchor cell that passes no `--scenario` resolves on `legacy`'s (`mesh-hwmp-shortest`) |
 | `expected`, `measured`, `margin` | what the anchor expects, what was measured, and why the floor sits where it does |
 | `source` | the citation (a literature anchor links its paper: `https://doi.org/<DOI>`, or the publisher's page) or the derivation |
 | `floors` | `key = number`, under the keys of AntHocNet's `ns3/tools/anchors.yml`, unique across the catalogue. Exactly one `<stem>_pdr_min`, and optionally `<stem>_oracle_hops_min` / `<stem>_oracle_hops_max`: the floors `ns3-scenario-check results --anchor` enforces. check-scenarios.py refuses any other key, so no declared floor goes unchecked |
@@ -99,7 +101,8 @@ Cell names are unique across the catalogue.
 3. Run `python3 tools/checks/check-scenarios.py`; it must print `ok`.
 4. Check the preset against the harness. `--commands` prints one line per
    cell: the cell name, a TAB, then routing-compare's arguments for a
-   1-second run. Run each line's arguments into `DIR/<cell>.txt`. Then
+   1-second run (a `--flowsFile` cell runs until 2 s past its last flow
+   start, which the harness requires). Run each line's arguments into `DIR/<cell>.txt`. Then
    `--configs DIR` compares each file's `##CONFIG##` line with the
    catalogue. `tools/checks/check-scenario-configs.sh NS3DIR` does both
    steps on a built tree, and CI runs it (`ns3.yml`, the stock-arms job).

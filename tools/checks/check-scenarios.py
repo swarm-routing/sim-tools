@@ -17,7 +17,8 @@ For every family, scenarios/<family>/{preset,preflight,anchors}.toml:
   that value as scenario_check's default);
 - every cell's preflight gives its recorded verdict line;
 - every anchor has a kind (literature | analytic | regression), flags that
-  resolve on the preset, the arms it judges, what it expects, a source (a
+  resolve on the preset of the scenario they name (another family's when it
+  is not this one's), the arms it judges, what it expects, a source (a
   literature anchor cites an https:// link: its DOI, or its publisher's page)
   and numeric floors, whose keys are unique across the catalogue;
 - every fixture the preset lists exists;
@@ -75,9 +76,29 @@ CONFIG_KEYS = {
     "transport": None,
     "flows": None,
     "cbrBps": None,
+    "rateManager": None,
+    "standard": "80211b",
+    "buildings": None,
+    "traceFile": None,
+    "flowsFile": None,
 }
 # The evidence run: one short seed of one stock arm, enough to print ##CONFIG##.
-EVIDENCE_FLAGS = "--time=1 --runs=1 --protocols=dsdv"
+EVIDENCE_FLAGS = "--runs=1 --protocols=dsdv"
+
+
+def evidence_time(values):
+    """The evidence run's --time: 1 s, or 2 s past the last flow start of a
+    --flowsFile (the harness refuses a flow that starts after --time, and
+    stops every flow 1 s before it)."""
+    path = values.get("flowsFile")
+    if not path:
+        return 1
+    starts = []
+    for line in Path(path).read_text(encoding="utf-8").splitlines():
+        fields = line.split("#", 1)[0].split()
+        if len(fields) == 5:
+            starts.append(float(fields[2]))
+    return int(max(starts, default=0)) + 2
 
 
 def same(a, b):
@@ -124,6 +145,15 @@ class Checker:
         if not names:
             self.bad(self.base, "no family (no <family>/preset.toml)")
         seen_cells, seen_floors = {}, {}
+        # An anchor's flags resolve on the preset of the scenario they name
+        # ("" when none), which may be another family's (the first one wins).
+        self.presets = {}
+        for family in names:
+            try:
+                preset = catalogue.load(self.base, family)["preset"]
+            except catalogue.CatalogueError:
+                continue
+            self.presets.setdefault(preset.get("scenario"), preset)
         for family in names:
             self.family(family, seen_cells, seen_floors)
         return self.findings
@@ -236,10 +266,17 @@ class Checker:
             arms = anchor.get("arms")
             if not arms or not all(isinstance(a, str) and a for a in arms):
                 self.bad(aw, "arms: the arms it judges, a list of names")
-            try:
-                catalogue.resolve(fam["preset"], anchor.get("flags", {}))
-            except catalogue.CatalogueError as e:
-                self.bad(aw, f"flags: {e}")
+            scenario = anchor.get("flags", {}).get("scenario", "")
+            preset = fam["preset"]
+            if preset.get("scenario") != scenario:
+                preset = self.presets.get(scenario)
+            if preset is None:
+                self.bad(aw, f"flags: no family's preset has scenario = {scenario!r}")
+            else:
+                try:
+                    catalogue.resolve(preset, anchor.get("flags", {}))
+                except catalogue.CatalogueError as e:
+                    self.bad(aw, f"flags: {e}")
             floors = anchor.get("floors", {})
             if not floors:
                 self.bad(aw, "no floors")
@@ -283,7 +320,10 @@ def all_cells(base):
         fam = catalogue.load(base, family)
         for name, cell in catalogue.cells(fam).items():
             values = catalogue.resolve(fam["preset"], cell["flags"])
-            yield family, name, values, flag_args(cell["flags"])
+            # A fixture runs from wherever routing-compare does: absolute paths.
+            values = catalogue.with_fixtures(base, family, values)
+            flags = catalogue.with_fixtures(base, family, cell["flags"])
+            yield family, name, values, flag_args(flags)
 
 
 def check_configs(base, configs):
@@ -319,8 +359,8 @@ def main(argv=None):
     ap.add_argument("--configs", metavar="DIR", help="check routing-compare's ##CONFIG## lines")
     args = ap.parse_args(argv)
     if args.commands:
-        for _family, name, _values, flags in all_cells(args.catalogue):
-            print(f"{name}\t{flags} {EVIDENCE_FLAGS}")
+        for _family, name, values, flags in all_cells(args.catalogue):
+            print(f"{name}\t{flags} --time={evidence_time(values)} {EVIDENCE_FLAGS}")
         return 0
     if args.configs:
         findings = check_configs(args.catalogue, args.configs)

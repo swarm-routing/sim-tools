@@ -12,7 +12,7 @@
 | `ns3/` | the ns-3 contrib module: probes, emitters, arenas | `GPL-2.0-only` |
 | `ns3/patches/` | patches to upstream ns-3's own source, one directory per ns-3 bug (`NS3-NNN/`: the patch, its apply script, reproducer and test), the runner `apply.sh` and the convention `README.md`; a patch is a derived work of ns-3, its provenance in that directory's `README.md` | `GPL-2.0-only` |
 | `campaigns/` | campaign plans (the pre-registration, copied into each benchmarks run) | `GPL-2.0-only` |
-| `scenarios/` | the network-family catalogue: presets, preflight rules, anchors (data, adapted from AntHocNet's GPL-2.0-only family pages and anchors; ns3-tools#55) | `GPL-2.0-only` |
+| `scenarios/` | the network-family catalogue: presets, preflight rules, anchors, fixtures (the disaster scene) (data, adapted from AntHocNet's GPL-2.0-only family pages, anchors and fixtures; ns3-tools#55) | `GPL-2.0-only` |
 | `docs/`, `README.md`, `AGENTS.md`, `CLAUDE.md` | docs | `GPL-2.0-only` |
 | everything else | | `GPL-2.0-only` |
 

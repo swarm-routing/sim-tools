@@ -66,7 +66,10 @@ def test_resolve():
         catalogue.load(CATALOGUE, "nope")
         check(False, "load accepted an unknown family")
     except catalogue.CatalogueError as e:
-        check("fanet, legacy, manet, vanet" in str(e), f"the error lists the families: {e}")
+        check(
+            "disaster, fanet, legacy, manet, static-mesh, vanet" in str(e),
+            f"the error lists the families: {e}",
+        )
 
 
 def test_root():

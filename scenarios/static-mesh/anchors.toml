@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The static Wi-Fi mesh family's anchor: analytic (on a static connected disk
+# field at one fixed rate, 802.11s HWMP's airtime metric is equal on every
+# link, so it converges to a minimum-hop path). Floor and cell adapted from
+# swarm-routing/AntHocNet ns3/tools/anchors.yml and tools/checks/check-anchors.sh
+# (GPL-2.0-only, AntHocNet #708, #1222); the floor key is that file's.
+# The anchor cell passes no --scenario, so its flags resolve on the legacy
+# preset (scenarios/legacy/), not this family's. Format: scenarios/README.md.
+schema = 1
+family = "static-mesh"
+
+[anchors.mesh-hwmp-shortest]
+kind = "analytic"
+flags = { nNodes = 16, areaX = 500, areaY = 500, range = 175, pause = 900, speed = 1, flows = 2, time = 120, runs = 2, standard = "80211a", rateManager = "constant6" }
+arms = ["hwmp", "oracle"]
+expected = "HWMP delivers on a static, connected, multi-hop field, and its mean hop count sits at the oracle's shortest path: never below it, at most 0.5 hops above it"
+source = "derivation: on a static disk field at one fixed rate every link has the same airtime cost, so HWMP's path is a minimum-hop path; below the oracle's mean the arm saw another topology (the AntHocNet #708 stream-pairing defect read 5 hops against the oracle's 6). Seeds 1-2 (--firstRun=1, the default) are the first two consecutive seeds whose field is connected (oracle PDR >= 99) and multi-hop (oracle hopsMean >= 2.0) on ns-3.48 and ns-3.49, read off the oracle alone (AntHocNet #1222)"
+measured = "HWMP's excess over the oracle's mean hops 0.00-0.42 over 24 connected multi-hop fields, seeds 1-20 on ns-3.48 and ns-3.49 (AntHocNet ns3/tools/anchors.yml; run with --diag for the hop counts)"
+floors = { mesh_hwmp_pdr_min = 95.0 }
+margin = "the PDR floor only catches an arm that stopped routing. The hop bounds (hwmp >= oracle, and mesh_hwmp_hops_excess_max = 0.5 above it) compare two arms, which ns3-scenario-check results --anchor does not do; AntHocNet's check-anchors.sh mesh-hwmp-shortest enforces them"

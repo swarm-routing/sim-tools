@@ -600,13 +600,16 @@ workflow, which the local loop above does not.
 The cell above is a shortened paper field. For a real comparison, run your
 arm on a network family's cells. The
 [family catalogue](https://github.com/swarm-routing/sim-tools/blob/main/scenarios/README.md)
-covers MANET, FANET, VANET and the legacy-default cells. For each family it gives the routing-compare
+covers MANET, FANET, VANET, the static Wi-Fi mesh, the disaster area and
+the legacy-default cells. For each family it gives the routing-compare
 preset, the cells, the preflight verdict each cell must give, and the
 family's anchors, with a source for every value. Each family also has a
 "configure it with ns-3" page:
 [MANET](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/manet.md),
 [FANET](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/fanet.md),
 [VANET](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/vanet.md),
+[static mesh](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/static-mesh.md),
+[disaster area](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/disaster.md),
 [legacy defaults](https://github.com/swarm-routing/sim-tools/blob/main/docs/families/legacy.md).
 
 The catalogue came after v1.1.4, so these links point at `main`. To use it:

@@ -49,7 +49,15 @@ PREFLIGHT_FROM_PRESET = {
     "blocksY": "blocksY",
     "streetWidth": "streetWidth",
     "transport": "transport",
+    "standard": "standard",
+    "rateManager": "rateManager",
+    "buildings": "buildings",
+    "traceFile": "traceFile",
+    "flowsFile": "flowsFile",
 }
+# Flags whose value is a fixture: a path relative to the family's directory,
+# made absolute (with_fixtures) wherever a cell is run or preflighted.
+FIXTURE_FLAGS = ("traceFile", "flowsFile")
 
 
 class CatalogueError(Exception):
@@ -119,6 +127,15 @@ def resolve(preset, flags):
     return values
 
 
+def with_fixtures(base, family, mapping):
+    """MAPPING (flags, values or knobs) with each FIXTURE_FLAGS value made an
+    absolute path under BASE/FAMILY, as the harness and preflight open it."""
+    return {
+        k: os.path.abspath(os.path.join(base, family, v)) if k in FIXTURE_FLAGS else v
+        for k, v in mapping.items()
+    }
+
+
 def cells(fam):
     """{cell name: {"class": label, "flags": {...}}} of a loaded family."""
     return fam["preset"].get("cells", {})
@@ -134,7 +151,7 @@ def preflight_knobs(base, family, cell=None):
         raise CatalogueError(
             f"family {family!r} has no preflight cell {cell!r}; it has: {', '.join(rows)}"
         )
-    return dict(rows[cell]["knobs"])
+    return with_fixtures(base, family, rows[cell]["knobs"])
 
 
 def anchor_floors(path):
