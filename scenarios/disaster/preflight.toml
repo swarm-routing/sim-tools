@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The disaster family's preflight: per cell, the ns3-scenario-check preflight
+# knobs (equal to the values the cell resolves to; check-scenarios.py checks
+# it; the fixture paths are relative to this directory) and the verdict line
+# they give. Run it with
+#   ns3-scenario-check preflight --family disaster --cell disaster-main
+# Format: scenarios/README.md.
+schema = 1
+family = "disaster"
+
+[cells.disaster-main]
+knobs = { nodes = 47, areaX = 1000, areaY = 500, range = 423.3, time = 900, flows = 20, mobility = "trace", propagation = "urban", buildings = "120,170,320,330;680,170,880,330", traceFile = "fixtures/disaster.ns2", flowsFile = "fixtures/disaster.flows" }
+verdict = "WARN (0 fail, 4 warn)"
+why = "range = 423.3 is the two-ray decode radius, preflight's disk estimate of the urban channel (the cell's --range is inert); then the trace WARN (the degree and lifetime rules read --speed/--pause, not the trace), the urban WARN (no hard cutoff), the trace-is-not-rwp WARN (a family of its own, validated by its anchor) and the path-diversity WARN (pathWindowS over half the ~10.6 s link lifetime). preflight also reports that 20 of 47 nodes start indoors"

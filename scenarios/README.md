@@ -14,6 +14,7 @@ data and docs, `GPL-2.0-only` ([`LICENSING.md`](../LICENSING.md)).
 | [`fanet`](fanet/) | `--scenario=fanet` | fanet-main, fanet-sparse | fanet-single-hop-3d, fanet-vertical-3d (analytic) | [docs/families/fanet.md](../docs/families/fanet.md) |
 | [`vanet`](vanet/) | `--scenario=vanet` | vanet-main, vanet-sparse | vanet-single-hop, vanet-building (analytic) | [docs/families/vanet.md](../docs/families/vanet.md) |
 | [`static-mesh`](static-mesh/) | `--scenario=paper` | static-mesh | mesh-hwmp-shortest (analytic) | [docs/families/static-mesh.md](../docs/families/static-mesh.md) |
+| [`disaster`](disaster/) | `--scenario=disaster` (a replayed scene, `fixtures/`) | disaster-main | disaster-arm (regression) | [docs/families/disaster.md](../docs/families/disaster.md) |
 | [`legacy`](legacy/) | none (the harness's defaults) | dense-small, heavy-load | single-hop (analytic) | [docs/families/legacy.md](../docs/families/legacy.md) |
 
 The catalogue describes the presets of routing-bench
@@ -62,7 +63,7 @@ TOML, read with Python's `tomllib`. Every file starts with `schema = 1` and
 | `[values.<flag>]` | each routing-compare flag the preset sets, as the value it resolves to: `value`, `kind`, `source`. A cell may set only a flag listed here, so a family whose cells change the radio lists `standard` and `rateManager` (`static-mesh`) |
 | `[fixed.<name>]` | a setting of the preset that no flag changes (the flow start window, the radio): `value`, `kind`, `source` |
 | `[cells.<name>]` | a cell: `class` (its difficulty label) and `flags`, the routing-compare flags on top of the preset (`scenario` names the preset; `area` sets areaX and areaY, as the harness's shorthand) |
-| `fixtures` | (optional) files the family's cells read, relative to its directory |
+| `fixtures` | (optional) files the family's cells read, relative to its directory. A `traceFile` or `flowsFile` value is such a path: `ns3-tool sweep`, preflight and `check-scenarios.py --commands` make it absolute, because routing-compare opens it from the ns-3 tree. A preset that requires a flag with no default (disaster's scene) lists it in `[values]` with the value the family's cells pass |
 
 A value's `kind` is one of:
 - `sourced`: a published setup uses the value or brackets it;

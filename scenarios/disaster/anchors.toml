@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# The disaster family's anchor: a regression floor (the #439 rule: every native
+# arm routes on the walled scene). Floor and cell adapted from
+# swarm-routing/AntHocNet ns3/tools/anchors.yml and tools/checks/check-disaster.sh
+# (MIT OR GPL-2.0-only, AntHocNet #580); the floor key is that file's.
+# Format: scenarios/README.md.
+schema = 1
+family = "disaster"
+
+[anchors.disaster-arm]
+kind = "regression"
+flags = { scenario = "disaster", traceFile = "fixtures/disaster.ns2", flowsFile = "fixtures/disaster.flows", buildings = "120,170,320,330;680,170,880,330", time = 300, runs = 2 }
+arms = ["aodv", "olsr"]
+expected = "each native stock arm delivers at least half its packets on the walled scene: it routes through the walls and the partition"
+source = "AntHocNet's disaster gate (tools/checks/check-disaster.sh, #580, the #439 rule that an arm must route), measured on this scene at 300 s, 2 seeds"
+measured = "AODV 68.7 %, OLSR 63.1 % (AntHocNet anthocnet 71.7 %); the oracle 74.1 % with the walls and 100.0 % with their loss zeroed (AntHocNet docs/benchmarks/scenarios/disaster.md)"
+floors = { disaster_arm_pdr_min = 50.0 }
+margin = "50.0 sits 13 pp under the weakest arm, so only an arm that stopped routing fails. The gate's other two checks compare two runs (the oracle with --ns3::UrbanObstacleShadowingLossModel::DbPerCut=0 and DbPerMeter=0 must deliver >= disaster_nowalls_oracle_pdr_min = 90.0, and the walls must cost it >= disaster_walls_cost_pp_min = 8.0 pp), which ns3-scenario-check results --anchor does not do; AntHocNet's check-disaster.sh enforces them"

@@ -78,6 +78,9 @@ CONFIG_KEYS = {
     "cbrBps": None,
     "rateManager": None,
     "standard": "80211b",
+    "buildings": None,
+    "traceFile": None,
+    "flowsFile": None,
 }
 # The evidence run: one short seed of one stock arm, enough to print ##CONFIG##.
 EVIDENCE_FLAGS = "--time=1 --runs=1 --protocols=dsdv"
@@ -302,7 +305,10 @@ def all_cells(base):
         fam = catalogue.load(base, family)
         for name, cell in catalogue.cells(fam).items():
             values = catalogue.resolve(fam["preset"], cell["flags"])
-            yield family, name, values, flag_args(cell["flags"])
+            # A fixture runs from wherever routing-compare does: absolute paths.
+            values = catalogue.with_fixtures(base, family, values)
+            flags = catalogue.with_fixtures(base, family, cell["flags"])
+            yield family, name, values, flag_args(flags)
 
 
 def check_configs(base, configs):

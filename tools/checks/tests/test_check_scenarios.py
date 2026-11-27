@@ -94,6 +94,8 @@ DEFECTS = [
         "no family's preset has scenario = ''",
     ),
     ("static-mesh/anchors.toml", "runs = 2,", "runs = 2, warp = 1,", "flags: flag 'warp'"),
+    ("disaster/preflight.toml", "range = 423.3,", "range = 0,", "FAIL (1 fail"),
+    ("disaster/preset.toml", '"fixtures/disaster.buildings"]', '"fixtures/gone.txt"]', "gone.txt"),
     (
         "static-mesh/preflight.toml",
         'standard = "80211a"',
@@ -134,9 +136,16 @@ with tempfile.TemporaryDirectory() as tmp:
 code, out = main_out(["--commands"])
 lines = out.splitlines()
 expect(
-    f"--commands: {lines[:2]}", code == 0 and lines[0].startswith("fanet-main\t--scenario=fanet")
+    f"--commands: {lines[:2]}",
+    code == 0 and lines[0].startswith("disaster-main\t--scenario=disaster --traceFile=/"),
 )
+SCENE = REPO / "scenarios" / "disaster" / "fixtures"
 GOOD = {
+    "disaster-main": "scenario=disaster nNodes=47 time=1 runs=1 firstRun=1 areaX=1000 areaY=500 "
+    "speed=5 pause=1 range=0 propagation=urban mobility=trace "
+    "buildings=120,170,320,330;680,170,880,330 "
+    f"traceFile={SCENE / 'disaster.ns2'} flowsFile={SCENE / 'disaster.flows'} "
+    "transport=udp flows=20 cbrBps=8000 offTime=0 rateManager=constant2",
     "fanet-main": "scenario=fanet nNodes=30 time=1 runs=1 firstRun=1 areaX=1000 areaY=1000 "
     "areaZ=300 speed=30 speedMin=10 pause=0 range=350 propagation=range mobility=gaussmarkov "
     "transport=udp flows=10 cbrBps=2048",
@@ -174,6 +183,8 @@ with tempfile.TemporaryDirectory() as tmp:
     bad = GOOD["vanet-sparse"].replace("nNodes=40", "nNodes=41").replace(" speedMin=10", "")
     (Path(tmp) / "vanet-sparse.txt").write_text(f"##CONFIG## {bad}\n", encoding="utf-8")
     (Path(tmp) / "paper-base.txt").unlink()
+    scene = GOOD["disaster-main"].replace("disaster.flows", "other.flows")
+    (Path(tmp) / "disaster-main.txt").write_text(f"##CONFIG## {scene}\n", encoding="utf-8")
     mesh = GOOD["static-mesh"].replace(" standard=80211a", "")
     (Path(tmp) / "static-mesh.txt").write_text(f"##CONFIG## {mesh}\n", encoding="utf-8")
     code, out = main_out(["--configs", tmp])
@@ -182,6 +193,7 @@ with tempfile.TemporaryDirectory() as tmp:
         "speedMin=1, the catalogue says 10",
         "no ##CONFIG##",
         "standard=80211b, the catalogue says 80211a",
+        "other.flows, the catalogue says",
     ):
         expect(f"--configs: {want!r} not in {out}", code == 1 and want in out)
 
