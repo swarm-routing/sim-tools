@@ -160,10 +160,11 @@ The C++ harness keeps AntHocNet's style and is not format-checked yet (the
 | `org-sync.yml` | `check / org-sync` | org-managed files match the templates | yes |
 | `pr-title.yml` | `title / title` | the PR title is a lowercase Conventional Commit | yes |
 | `review-gate.yml` | `review / coderabbit` | CodeRabbit has reviewed the PR | yes |
+| `rcapa-tickets.yml` | `RCAPA tickets come first` | an RCAPA document, register row or `ns3/patches/NS3-NNN/` the PR changes has its `[rcapa]` ticket first | yes |
 | `dco.yml`, `scorecard.yml`, `sync-labels.yml` | | sign-off on outside contributions; OpenSSF Scorecard; labels | no |
 
 The required checks are the ones the `main` ruleset lists: `gh api
-repos/swarm-routing/ns3-tools/rules/branches/main`. `main` merges through a
+repos/swarm-routing/sim-tools/rules/branches/main`. `main` merges through a
 merge queue, so a pull request is merged by enabling auto-merge.
 
 ## Release

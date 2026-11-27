@@ -5,7 +5,7 @@ name: RCAPA tickets
 # swarm-routing/.github#952: an RCAPA document, register row or ns3/patches/NS3-NNN/
 # change needs its [rcapa] ticket first, labelled, with the timeline linking its comments.
 # No paths filter (org rule "Settings are code"): the job skips its work inside when no
-# RCAPA path changed. Not a required check yet: that is a ruleset change in swarm-routing/.github.
+# RCAPA path changed. A required check (#409): `[settings] required_checks` in .github/org-sync.toml.
 on:
   pull_request:
   merge_group:
