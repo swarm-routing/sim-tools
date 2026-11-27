@@ -102,7 +102,7 @@ release_environment = false
 # (swarm-routing/sim-containers#35, #322; maintainer decision 2026-11-24): its name changes only if
 # its matrix (`latest`, the four arms) does, and then this list moves with it.
 # Not `module / format` (skipped until formatting is checked).
-required_checks = ["module / ns-latest debug", "module / ns-latest sanitized", "module / headers / licence", "stock arms deliver (aodv olsr dsdv hwmp on ns-latest)", "python-quality / python", "ns3-tool tests (Python 3.11)", "ns3-tool tests (Python 3.13)", "query equivalence on AntHocNet's committed cells", "check / org-sync", "title / title", "review / coderabbit"]
+required_checks = ["module / ns-latest debug", "module / ns-latest sanitized", "module / headers / licence", "stock arms deliver (aodv olsr dsdv hwmp on ns-latest)", "python-quality / python", "ns3-tool tests (Python 3.11)", "ns3-tool tests (Python 3.13)", "query equivalence on AntHocNet's committed cells", "check / org-sync", "title / title", "review / coderabbit", "RCAPA tickets come first"]
 # Merge through a merge queue (swarm-routing/.github#130); every workflow behind a required
 # check also runs on merge_group.
 merge_queue = true
