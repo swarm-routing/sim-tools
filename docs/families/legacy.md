@@ -8,9 +8,11 @@ them:
 - **dense-small**, a small, dense, barely mobile field, cheap enough to
   run every night. It is the fast regression cell, and AntHocNet's hard
   case;
-- **heavy-load**, the paper base field's geometry with twice the sources at
-  a much higher rate, so the bottleneck moves from route discovery to
-  channel contention.
+- **heavy-load**, the paper base field's geometry with more sources at a
+  much higher rate (4096 bit/s against 512), so the bottleneck moves from
+  route discovery to channel contention. It asks for 40 flows, but the
+  harness's 1:1 source/sink pairing caps generated flows at `nNodes / 2`,
+  so 25 sources run (see Pitfalls).
 
 They are not one network family in the sense of [MANET](manet.md),
 [FANET](fanet.md) or [VANET](vanet.md): no published setup defines them, and
@@ -125,6 +127,12 @@ rate-manager regression of the AntHocNet #51 kind reads about 50 % here.
 - **dense-small is not a disk.** `--range=0` means ns-3's default channel,
   so links have no fixed range, and a `--range` you add turns the cell into
   a different one (a disk).
+- **heavy-load runs 25 flows, not 40.** Without `--sink` or `--flowsFile`,
+  routing-compare pairs each source with its own sink and caps the flows at
+  `nNodes / 2` (`routing-bench-run.cc`), so `--flows=40` on 50 nodes
+  installs 25. The flag is AntHocNet's, kept so the cell's history stays
+  comparable; `##CONFIG##` and preflight's offered-load figure report the
+  requested 40.
 - **heavy-load is not the paper preset.** It sets the paper field's
   geometry by hand, but runs on the defaults: 40 s and a [0, 5] s start
   window unless you pass `--time`, where `--scenario=paper` gives 900 s and

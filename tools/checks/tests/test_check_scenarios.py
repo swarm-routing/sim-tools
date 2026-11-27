@@ -86,6 +86,7 @@ DEFECTS = [
     ("README.md", "](../docs/families/vanet.md)", "]", "does not link ../docs/families/vanet.md"),
     ("vanet/preset.toml", "schema = 1", "schema = 2", "this reader reads 1"),
     ("legacy/preset.toml", 'scenario = ""', "", "no scenario (a string"),
+    ("legacy/preset.toml", 'scenario = ""', 'scenario = "  "', "no scenario (a string"),
     ("legacy/preset.toml", "range = 0 }", 'range = 0, scenario = "paper" }', "on the '' preset"),
     ("fanet/anchors.toml", 'family = "fanet"', 'family = "vanet"', "family = 'vanet'"),
 ]
